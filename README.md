@@ -1,4 +1,6 @@
-# Datasets & Teams
+# DSC 511: Group Project
+
+## Datasets & Teams
 
 In the semester project of this course, teams of 3 students must pick a dataset and a project
 related to Big Data Analytics. It is highly recommended for each team to include at least one
@@ -40,7 +42,59 @@ to work on it.
 
 Please send your project proposal (via email) and the names of your group members
 before Monday 23.2.2025. Your email should have the subject
-“dsc511.project.<surnames>”.
+"dsc511.project.<surnames>".
 
 Note: Datasets previously used in the first semester courses (e.g., DSC 510) are not permitted
 for this project.
+
+## Project Deliverables
+
+### Code & Analysis
+
+For the Big Data Analytics semester project, you should perform both an Exploratory Analysis and
+Advanced Analysis. The Exploratory Analysis of your dataset should be based on Apache Spark
+`DataFrames`. For the Advanced Analysis, you should use at least two out of (1) Artificial
+Intelligence/Machine Learning techniques such as clustering, classification, regression, etc., (2) Graph
+Analysis, (3) Text Analysis, (4) Analysis/Processing of Streaming Data, and (5) Recommendation
+Systems. You can use Apache Spark libraries like MLlib for Machine Learning modeling, Text
+Analytics, and Recommendations, `GraphFrames` for Graph Analysis, and`StructuredStreaming` for
+Streaming Analytics.
+
+The deadline for the Code & Analysis part (Repository + Jupyter Notebooks + Documentation) is on
+**16/05/2025**.
+
+### Presentation
+
+The presentation should be a PowerPoint or PDF file that highlights the problem(s), the questions
+that you tried to answer, and your goal. You have to describe dataset features, your methodology,
+e.g., pre-processing steps, data modeling, feature selection, selected models and tools (e.g., `MLlib`,
+`GraphFrames`, etc.), as well as your final results.
+
+1. The presentation should be around 15 minutes + 5 minutes of Q&A.
+2. A suggested structure of your presentation is the following:
+   a. Introduction / Motivation,
+   b. Background
+   c. Dataset description
+   d. Methodology – Results (Exploratory Analysis + Advanced Analytics)
+   e. Conclusion
+
+The presentations will be on **23/5/2025** at **15:00-18:00** (15-minute presentation + 5-minute questions
+for each team).
+
+PS. Even if different students may be responsible for different tasks during the semester's project, any
+student should be able to answer questions for both coding and presentation in the Q&A session.
+
+## Grading
+
+Following, I highlight the grading scheme of the Semester Project
+
+- Dataset selection & Initial Description (5%)
+- Code & Analysis (80%)
+- Project Organization and Quality (20%):
+  - Github repository
+  - Documentation
+  - Code quality
+  - Performance Issues
+- Exploratory Analysis (20%)
+- Advance Analysis (40%)
+- Presentation (15%)

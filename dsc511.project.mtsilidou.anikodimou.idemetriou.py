@@ -13,10 +13,14 @@ r"""°°°
 
 from pyspark.ml.feature import StringIndexer
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import udf
 from pyspark.sql.functions import *
-from pyspark.sql.types import IntegerType
+from pyspark.sql.types import FloatType, IntegerType, StringType
+import folium
 import matplotlib.pyplot as plt
+import os
 import seaborn as sns
+import pandas as pd
 
 sns.set_palette("viridis")
 # Get or create a SparkSession object
@@ -134,7 +138,7 @@ cleaned = original
 # Checking for duplicates
 cleaned = cleaned.drop_duplicates()
 
-print(f'From our dataset, {cleaned.count()} / {original_count} are distinct')
+print(f'From our dataset, {cleaned.count()} / {original.count()} are distinct')
 
 # |%%--%%| <jPAQaVYObc|vO0cDou6S3>
 r"""°°°
@@ -154,17 +158,20 @@ r"""°°°
 Some datasets use different string literals to mean missing data. These include
 'NA', 'No Review', 'N/A', NONE', 'NULL', 'MISSING', '', 0, etc.
 
-Let's harmonize by replacing such data with `None`
+Let's harmonize by replacing such data with `None` and cast the coordinates
+decimal degrees to float.
 °°°"""
 # |%%--%%| <R8IbPQba9m|AH7Ufw7iCJ>
 
 # We notice that lon/lat represented here as decimal degrees should be numeric,
 # but they are typed as strings. This could mean that there are some "hard-coded" NAs
 
+print('Hotels with missing coordinates')
 cleaned\
     .select('Hotel_Address', 'lng', 'lat')\
     .filter(~col('lng').rlike(r'[0-9]') | ~col('lat').rlike(r'[0-9]'))\
-    .show(5)
+    .distinct()\
+    .show(truncate=False)
 
 # It seems that 'NA' is `None`. Let's update it
 cleaned = cleaned\
@@ -174,15 +181,48 @@ cleaned = cleaned\
     ).withColumn(
         'lat',
         when(col('lat') == 'NA', lit(None)).otherwise(col('lat'))
+    ).withColumn(
+        'lng',
+        col('lng').cast(FloatType())
+    ).withColumn(
+        'lat',
+        col('lat').cast(FloatType())
     )
 
 # Verify
 cleaned\
     .select('Hotel_Address', 'lng', 'lat')\
-    .filter(~col('lng').rlike(r'[0-9]') | ~col('lat').rlike(r'[0-9]'))\
-    .show(5)
+    .filter(~col('lng').rlike(r'[0-9]') | ~col('lat').rlike(r'[0-9]') | col('lng').isNull() | col('lat').isNull())\
+    .distinct()\
+    .show(truncate=False)
 
-#|%%--%%| <AH7Ufw7iCJ|ydraWNJwES>
+# Entries with missing lon/lat
+print('Number of reviews with missing coordinates:')
+cleaned\
+    .select('Hotel_Address', 'lng', 'lat')\
+    .filter(col('lng').isNull() | col('lat').isNull())\
+    .count()
+
+#|%%--%%| <AH7Ufw7iCJ|1O5VQfEk2x>
+r"""°°°
+The `Hotel_Address` seems to have no missing data. We do this by testing if the
+length of the string is less than a reasonable address size and if there is any
+`None` values
+°°°"""
+#|%%--%%| <1O5VQfEk2x|0ckasEA7Vs>
+print('Hotel Addresses with None entries:')
+cleaned\
+    .select('Hotel_Address', 'lng', 'lat')\
+    .filter(col('Hotel_Address').isNull() )\
+    .count()
+
+print('Hotel Addresses with invalid addresses:')
+cleaned\
+    .select('Hotel_Address', 'lng', 'lat')\
+    .filter(length(col('Hotel_Address')) < 10 )\
+    .count()
+
+#|%%--%%| <0ckasEA7Vs|ydraWNJwES>
 
 # According to the dataset, no positive / negative reviews are expressed as 'No Positive' / 'No Negative'
 cleaned = cleaned\
@@ -255,11 +295,125 @@ cleaned\
 
 # |%%--%%| <Fd4YrL2N5E|8bGrLv3gNR>
 
-# Encode location
+r"""°°°
+## Geospatial
 
-# TODO: Check if Hotel_Address matches (lng, lat) via reverse geolocation
+In this section we will enrich our data with additional spacial information.
+Even though we have have all the coordinates of the hotels, not all hotels
+have address, city or country information.
 
-#|%%--%%| <8bGrLv3gNR|Gc9ZkdLZsv>
+We can use a reverse geocoding server to retrieve the address of each location.
+However, because of rate limiting and API keys restrictions we cannot get all
+the addresses of all our dataset. Instead, given the democratization of the
+spatial data by OpenStreetMap and other affiliated open source champions, we
+can host our own Nominatim instance, download the `country_grid.sql.gz` dataset,
+and query for features at the specific location.
+
+Please follow the instructions to start the server.
+
+TL;DR: `make nominatim/build && make nominatim/run`
+°°°"""
+# |%%--%%| <8bGrLv3gNR|QSsRyOLHlW>
+import psycopg2
+
+def get_connection():
+    try:
+        return psycopg2.connect(
+            database="nominatim",
+            user="postgres",
+            password="n7m-geocoding",
+            host="localhost",
+        )
+    except:
+        return False
+
+def query_country(lon, lat):
+    query = f"""
+    SELECT DISTINCT country_osm_grid.country_code
+        FROM country_osm_grid
+        WHERE ST_Contains(country_osm_grid.geometry, ST_GeomFromText('POINT({lon} {lat})', 4326));
+    """
+
+    with nominatim:
+        with nominatim.cursor() as curr:
+            curr.execute(query)
+            return curr.fetchone()[0]
+
+
+@udf(StringType())
+def query_country_udf(lon, lat):
+    return query_country(lon, lat)
+
+if os.getenv('DSC511-NOMINATIM'):
+    nominatim = get_connection()
+    cleaned.withColumn('Country', query_country_udf('lng', 'lat'))
+
+    nominatim.close()
+else:
+    # Load the processed data to save time
+    pass
+
+#|%%--%%| <QSsRyOLHlW|a1ApOgkdR7>
+
+countries = pd.read_csv('./data/countries.csv', delimiter='\t').set_index('ISO')
+_countries = countries.name.str.upper().to_dict().items()
+
+@udf(StringType())
+def extract_country(address):
+    for iso, name in _countries:
+        if address.upper().endswith(name):
+            return iso
+
+cleaned = cleaned\
+    .withColumn('Country', extract_country('Hotel_Address'))
+
+
+country_indexer = StringIndexer(inputCol='Country', outputCol='Country_Encoded')
+cleaned = country_indexer.fit(cleaned).transform(cleaned)
+# This is time consuming, so persist
+cleaned.persist()
+
+cleaned\
+    .select('Country')\
+    .groupBy('Country').count().orderBy("count", ascending=False)\
+    .show()
+
+# TODO: Do we need cities as well?
+
+#|%%--%%| <a1ApOgkdR7|R3aUHprpeK>
+
+hotels = cleaned\
+    .select('Hotel_Name', 'Hotel_Address', 'lng', 'lat', 'Average_Score', 'Total_Number_of_Reviews')\
+    .distinct()
+
+hotels_df = hotels\
+    .filter(~col('lng').isNull() & ~col('lat').isNull())\
+    .toPandas()
+
+m = folium.Map(location=[33.5, 35.1], zoom_start=4)
+
+def color_review(score):
+    if score >=8.0:
+        return 'green'
+    elif score >= 6.0:
+        return 'orange'
+    else:
+        return 'red'
+
+# TODO: Add additional features
+
+for index, row in hotels_df.iterrows():
+    folium.Marker(
+        icon=folium.Icon(color=color_review(row['Average_Score'])),
+        location=[row['lat'], row['lng']],
+        tooltip=row['Hotel_Name'],
+        popup=f'<b>{row["Hotel_Name"]}</b><br>Rating: {row["Average_Score"]}',
+    ).add_to(m)
+
+m.save('./results/hotels.html')
+m
+
+#|%%--%%| <R3aUHprpeK|Gc9ZkdLZsv>
 r"""°°°
 We saw before that our dataset consists of the join between "Hotel", "Reviewer" and "Review".
 It is natural to catagorize the "keys" of these tables where possible. In particular,
@@ -451,7 +605,7 @@ num_features = sample_pandas[[
     ]]
 sns.heatmap(num_features.corr(method='pearson'), annot=True)
 
-# |%%--%%| <vv03SuyONM|QSsRyOLHlW>
+#|%%--%%| <vv03SuyONM|3B9rANu4lX>
 r"""°°°
 From the heatmap we can see that `Additional_Number_of_Scoring` and `Total_Number_of_Reviews`
 are highly linearly correlated since the correlation coefficient is equal to 0.82 (very close to 1).
@@ -463,5 +617,5 @@ As already studied in the previous pairplots `Average_Score` and `Reviewer_Score
 are linearly correlated even though their correlation is also pretty weak
 (correlation coefficient equals to 0.37).
 °°°"""
-# |%%--%%| <QSsRyOLHlW|Qh2YO0wwL6>
+# |%%--%%| <3B9rANu4lX|Qh2YO0wwL6>
 

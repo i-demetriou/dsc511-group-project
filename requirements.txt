@@ -1,7 +1,9 @@
+folium
 matplotlib
 mlflow
 notebook
 pandas
+psycopg2
 pyspark
 scikit-learn
 seaborn

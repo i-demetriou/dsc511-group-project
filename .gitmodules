@@ -1,0 +1,3 @@
+[submodule "n7m"]
+	path = n7m
+	url = https://github.com/i-demetriou/n7m.git

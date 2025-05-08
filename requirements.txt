@@ -1,6 +1,8 @@
 folium
 matplotlib
 mlflow
+networkx
+nltk
 notebook
 pandas
 psycopg2

@@ -7,7 +7,32 @@ r"""°°°
 - Anastasios Nikodimou
 - Ioannis Demetriou
 °°°"""
-#|%%--%%| <rh9kv9W4Ol|GGUyxopChC>
+#|%%--%%| <rh9kv9W4Ol|kmBYzlLg4s>
+r"""°°°
+TODO LIST
+
+- EDA (Exploratory Data Analysis)
+- Περισσότερα γραφήματα για κείμενα (π.χ. κατανομές tokens, μέσος όρος λέξεων ανά κείμενο)
+- Plots με αριθμό tokens, κατανομή, μέσους όρους κτλ.
+- Machine Learning / NLP tasks
+- Χρήση περισσότερων αλγορίθμων για ταξινόμηση κειμένου.
+- Επεξεργασία κειμένου:
+- Lemmatization + Tokenization: εύρεση ποια tokens εμφανίζονται πιο συχνά.
+- Classification of Reviews:
+- Δοκιμή σε υπάρχοντα reviews αν τα ταξινομεί σωστά ως θετικά ή αρνητικά.
+- Δημιουργία δικών μας reviews και δοκιμή ταξινόμησης (π.χ. με χρήση KNN βάσει tokens).
+- Bias Analysis
+- Έλεγχος για bias στα δεδομένα ή στο μοντέλο (π.χ. imbalance στα labels).
+- Scaling / Preprocessing
+- Δοκιμή scalers (π.χ. MaxMinScaler) σε NLP χαρακτηριστικά (όπως TF-IDF values).
+- Recommendation System
+- Ανάπτυξη Hybrid Recommendation System:
+- Συνδυασμός content-based και collaborative filtering μεθόδων.
+- Να γίνει προσεκτική και σωστή υλοποίηση.
+ - Clarify how we plan to interpret the `Additional_Number_of_Scoring` variable.
+
+°°°"""
+#|%%--%%| <kmBYzlLg4s|GGUyxopChC>
 
 # Importing libraries
 
@@ -21,21 +46,53 @@ import pandas as pd
 
 from nltk.stem import WordNetLemmatizer
 
-from pyspark.ml.evaluation import RegressionEvaluator
-from pyspark.ml.feature import RegexTokenizer, StringIndexer, StopWordsRemover
+from pyspark.ml import Pipeline
+from pyspark.ml.classification import (
+    DecisionTreeClassifier,
+    NaiveBayes,
+    MultilayerPerceptronClassifier,
+    LogisticRegression,
+    RandomForestClassifier,
+)
+from pyspark.ml.clustering import KMeans
+from pyspark.ml.evaluation import (
+    ClusteringEvaluator,
+    BinaryClassificationEvaluator,
+    MulticlassClassificationEvaluator,
+    RegressionEvaluator,
+)
+from pyspark.ml.feature import (
+    HashingTF,
+    IDF,
+    NGram,
+    RegexTokenizer,
+    StopWordsRemover,
+    StringIndexer,
+    PCA,
+    Tokenizer,
+    VectorAssembler,
+)
 from pyspark.ml.recommendation import ALS
+from pyspark.ml.regression import LinearRegression
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import(
+    avg,
     array,
     array_contains,
     arrays_zip,
-    expr,
     col,
+    concat,
     concat_ws,
+    count,
     explode,
+    expr,
+    isnan,
+    isnull,
     length,
     lit,
     lower,
+    mean,
     regexp_extract,
     regexp_replace,
     size,
@@ -44,7 +101,7 @@ from pyspark.sql.functions import(
     to_date,
     trim,
     udf,
-    when
+    when,
 )
 from pyspark.sql.types import ArrayType, BooleanType, FloatType, IntegerType, StringType
 
@@ -1470,3 +1527,1461 @@ predictions = model.transform(test_data)
 evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
 rmse = evaluator.evaluate(predictions)
 print("Root-mean-square error = " + str(rmse))
+#|%%--%%| <ykMJT7653q|zF6H9fHwAj>
+r"""°°°
+## Machine Learning
+
+Here we are going to create the different datasets that will be used throughout
+the machine learning process. First, we will create a smaller sample of the full
+dataset to allow faster execution of some machine learning models during development
+and testing.
+
+We will also generate an aggregated dataset that summarizes the review results
+for each hotel, providing useful features such as average sentiment score or total
+number of reviews.
+
+After preparing these datasets, we will proceed to build and evaluate different
+machine learning models for sentiment classification.
+
+It is important to note that during the machine learning modeling process,
+cross-validation was not applied. We are aware that using cross-validation is the
+proper and more reliable approach for evaluating models, especially when combined
+with appropriate data splitting. Although a train-test split was used, running
+cross-validation proved to be quite time-consuming due to the size of the dataset
+and the complexity of some models.
+
+**Therefore, cross-validation may be applied in future steps, particularly for
+models with longer training times or in order to further optimize performance.**
+°°°"""
+# |%%--%%| <zF6H9fHwAj|gWVGi1cWd7>
+r"""°°°
+Here we are creating a reduced version of the dataset by selecting the hotels
+that have the most reviews, until we reach around 50,000 total rows.
+
+First, we count how many reviews each hotel has and then we sort them in descending order.
+°°°"""
+# |%%--%%| <gWVGi1cWd7|sk2NrOIxk8>
+r"""°°°
+The main reason we created this reduced dataset is that some machine learning algorithms
+take too much time to run on the full dataset. So, in order to speed up the process,
+we decided to keep only the hotels with the most reviews until we reach around 50,000 rows.
+
+We know that selecting hotels based on the number of reviews is a convenient approach
+and not always realistic in practice, but it helps us develop and test our models
+more efficiently during the early stages.
+
+°°°"""
+# |%%--%%| <sk2NrOIxk8|JHqRvkmaaN>
+
+hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
+
+# Step 2: Order hotels by number of reviews (descending)
+ordered_hotels = hotel_counts.orderBy("review_count", ascending=False)
+
+# Step 3: Collect hotel names and build cumulative total until ~50,000 rows
+hotel_list = ordered_hotels.collect()
+
+selected_hotels = []
+running_total = 0
+
+for row in hotel_list:
+    hotel_name = row["Hotel_Name"]
+    count_reviews = row["review_count"]
+    if running_total + count_reviews <= 50000:
+        selected_hotels.append(hotel_name)
+        running_total += count_reviews
+    else:
+        break
+
+clean_reduced_hotels_most_reviews = cleaned.filter(col("Hotel_Name").isin(selected_hotels))
+
+# |%%--%%| <JHqRvkmaaN|8Tv87DcyJ1>
+r"""°°°
+Great — you want to create a new dataset that, for each hotel, contains the average values of selected numerical columns from your full dataset cleaned.
+
+
+Step-by-step goal:
+From cleaned, compute average values per hotel for the following columns:
+°°°"""
+# |%%--%%| <8Tv87DcyJ1|eqnNRlrm5u>
+
+# Step 1: Compute averages
+columns_to_average = [
+    'Additional_Number_of_Scoring',
+    'Average_Score',
+    'Total_Number_of_Reviews',
+    'Total_Number_of_Reviews_Reviewer_Has_Given',
+    'days_since_review',
+    'lat',
+    'lng',
+    'Num_Tags',
+    'Positive_Lemma_Count',
+    'Negative_Lemma_Count'
+]
+
+agg_exprs = [avg(col).alias(f"avg_{col}") for col in columns_to_average]
+
+hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
+
+# Step 2: Compute review counts per hotel
+hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
+
+# Step 3: Join the two DataFrames
+hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
+
+# Step 4: Filter for hotels with more than 30 reviews
+hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
+
+# Step 5: (Optional) Show result
+hotel_avg_stats_filtered.show(truncate=False)
+
+
+# |%%--%%| <eqnNRlrm5u|1QpabtuUGF>
+
+hotel_avg_stats_filtered.count()
+
+
+# |%%--%%| <1QpabtuUGF|w5tFqCymof>
+
+# Print hotels that have missing coordinates
+hotel_avg_stats_filtered.filter("avg_lat IS NULL OR avg_lng IS NULL").select("Hotel_Name", "avg_lat", "avg_lng").show(truncate=False)
+
+# |%%--%%| <w5tFqCymof|D9z76Okohb>
+
+# Remove those hotels from the dataset
+hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
+
+# |%%--%%| <D9z76Okohb|RkTFskNW6W>
+
+print(f"Final number of hotels (after removing those with missing lat/lng): {hotel_avg_stats_filtered.count()}")
+
+
+# |%%--%%| <RkTFskNW6W|2UOtJXDaL8>
+r"""°°°
+Here we build a regression model to predict the average hotel review score based
+on aggregated features derived from user reviews.
+
+We begin by computing per-hotel averages of various numerical attributes
+(such as number of reviews, geographic coordinates, and word counts). We then filter
+out hotels with fewer than 30 reviews and those missing geographic data.
+Using these cleaned and aggregated values, we assemble a feature vector for each
+hotel and train a linear regression model to estimate the average review score.
+
+The dataset is split into training and testing sets, and we evaluate the model's
+performance using RMSE and R² metrics to assess prediction accuracy and fit quality.
+
+°°°"""
+# |%%--%%| <2UOtJXDaL8|6NYnx82RuP>
+
+# Step 1: Compute averages per hotel
+columns_to_average = [
+    'Additional_Number_of_Scoring',
+    'Average_Score',
+    'Total_Number_of_Reviews',
+    'Total_Number_of_Reviews_Reviewer_Has_Given',
+    'days_since_review',
+    'lat',
+    'lng',
+    'Num_Tags',
+    'Positive_Lemma_Count',
+    'Negative_Lemma_Count'
+]
+
+agg_exprs = [avg(col).alias(f"avg_{col}") for col in columns_to_average]
+hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
+
+# Step 2: Add review count and filter hotels with > 30 reviews
+hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
+hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
+hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
+
+# Step 3: Remove hotels with null lat/lng
+hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
+
+# Step 4: Assemble features
+feature_cols = [
+    'avg_Additional_Number_of_Scoring',
+    'avg_Total_Number_of_Reviews',
+    'avg_Total_Number_of_Reviews_Reviewer_Has_Given',
+    'avg_days_since_review',
+    'avg_lat',
+    'avg_lng',
+    'avg_Num_Tags',
+    'avg_Positive_Lemma_Count',
+    'avg_Negative_Lemma_Count'
+]
+
+assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+assembled_data = assembler.transform(hotel_avg_stats_filtered)
+
+# Step 5: Prepare final dataset with label
+final_data = assembled_data.select("features", col("avg_Average_Score").alias("label"))
+
+# Step 6: Train-test split
+train_data, test_data = final_data.randomSplit([0.8, 0.2], seed=42)
+
+# Step 7: Train linear regression model
+lr = LinearRegression(featuresCol="features", labelCol="label")
+lr_model = lr.fit(train_data)
+
+# Step 8: Make predictions on test set
+predictions = lr_model.transform(test_data)
+
+# Step 9: Evaluate model
+evaluator = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
+rmse = evaluator.evaluate(predictions)
+
+evaluator_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
+r2 = evaluator_r2.evaluate(predictions)
+
+print(f"RMSE on test set: {rmse}")
+print(f"R² on test set: {r2}")
+
+
+# |%%--%%| <6NYnx82RuP|CHvWPBfEMR>
+r"""°°°
+We can see that the linear regression model achieved an RMSE of approximately 0.38,
+indicating that, on average, the predicted hotel scores deviate from the actual score
+s by less than half a point. Additionally, the model achieved an R² of 0.49,
+meaning it explains about 49% of the variance in average hotel scores.
+
+This suggests that while the model captures some meaningful patterns in the data,
+there is still substantial variability in hotel ratings that remains unexplained
+by the current features. These results indicate a moderate predictive performance,
+and could potentially be improved by using more complex models (like Random Forest
+or Gradient Boosting) or by incorporating richer features such as text sentiment
+from reviews or location-based attributes.
+°°°"""
+# |%%--%%| <CHvWPBfEMR|5wjsTjsDoT>
+
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor
+from pyspark.ml.evaluation import RegressionEvaluator
+
+# Step 1: Define models
+models = {
+    "Linear Regression": LinearRegression(featuresCol="features", labelCol="label"),
+    "Random Forest": RandomForestRegressor(featuresCol="features", labelCol="label", numTrees=100),
+    "Gradient Boosted Trees": GBTRegressor(featuresCol="features", labelCol="label", maxIter=100)
+}
+
+# Step 2: Train, predict, evaluate
+evaluator_rmse = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
+evaluator_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
+
+results = []
+
+for name, model in models.items():
+    fitted = model.fit(train_data)
+    preds = fitted.transform(test_data)
+
+    rmse = evaluator_rmse.evaluate(preds)
+    r2 = evaluator_r2.evaluate(preds)
+
+    results.append((name, rmse, r2))
+
+# Step 3: Print results
+for name, rmse, r2 in results:
+    print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
+
+
+# |%%--%%| <5wjsTjsDoT|EXHVgEgs4E>
+r"""°°°
+Linear Regression performs best among the three models — it has the lowest RMSE (0.3766)
+and the highest R² (0.4892). This suggests that, despite being a simpler model,
+it captures the underlying patterns in your aggregated dataset more effectively
+than the tree-based models.
+
+Random Forest and GBT perform slightly worse, with higher RMSE and lower R².
+This may be surprising since these models typically outperform linear models on
+complex data — but in your case, the features are already averaged per hotel,
+which may remove much of the non-linear variation and noise that tree models are
+good at exploiting.
+
+This implies your data relationships are relatively linear, or at least
+well-approximated by a linear function at this aggregation level.
+°°°"""
+# |%%--%%| <EXHVgEgs4E|hLAiSK08Mh>
+
+pdf = preds.select("prediction", "label").toPandas()
+plt.scatter(pdf["label"], pdf["prediction"], alpha=0.3)
+plt.plot([pdf["label"].min(), pdf["label"].max()], [pdf["label"].min(), pdf["label"].max()], color='red')
+plt.xlabel("Actual")
+plt.ylabel("Predicted")
+plt.title(f"{name} - Actual vs. Predicted")
+plt.show()
+
+
+# |%%--%%| <hLAiSK08Mh|lBJNeEsFhX>
+
+if hasattr(fitted, "featureImportances"):
+    importances = fitted.featureImportances
+    print(f"{name} feature importances:\n{importances}")
+
+# |%%--%%| <lBJNeEsFhX|W4lWEQGhlS>
+
+# Assume 'feature_cols' is your list of feature column names
+feature_cols = [...]  # <- replace with your actual feature names
+
+for name, model in models.items():
+    fitted = model.fit(train_data)
+    preds = fitted.transform(test_data)
+
+    rmse = evaluator_rmse.evaluate(preds)
+    r2 = evaluator_r2.evaluate(preds)
+
+    print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
+
+    # Feature importances (for tree-based models)
+    if hasattr(fitted, "featureImportances"):
+        importances = fitted.featureImportances
+        importance_list = importances.toArray()
+
+        print("Feature Importances:")
+        for feat, score in zip(feature_cols, importance_list):
+            print(f"  {feat}: {score:.4f}")
+
+# |%%--%%| <W4lWEQGhlS|sTqfuRsZZ2>
+r"""°°°
+### Model 3
+°°°"""
+# |%%--%%| <sTqfuRsZZ2|LAxVurgFh3>
+
+clean_reduced_hotels_most_reviews.filter(
+    (col("lat").isNull()) | (col("lng").isNull())
+).select("Hotel_Name", "lat", "lng").show(truncate=False)
+
+# |%%--%%| <LAxVurgFh3|f9m3Dy14SP>
+
+hotel_locations = clean_reduced_hotels_most_reviews \
+    .select("Hotel_Name", "lat", "lng") \
+    .dropna(subset=["lat", "lng"]) \
+    .dropDuplicates(["Hotel_Name"])
+
+# |%%--%%| <f9m3Dy14SP|YyGDi7y3Kp>
+
+hotel_locations.count()
+
+# |%%--%%| <YyGDi7y3Kp|AQN1w2nZ6M>
+
+hotel_coords = hotel_locations.select("Hotel_Name", "lat", "lng").collect()
+
+# |%%--%%| <AQN1w2nZ6M|xySrlD9GvB>
+
+from geopy.geocoders import Nominatim
+from time import sleep
+
+geolocator = Nominatim(user_agent="geoapi")
+
+results = []
+for row in hotel_coords:
+    hotel_name, lat, lng = row["Hotel_Name"], row["lat"], row["lng"]
+    try:
+        location = geolocator.reverse((lat, lng), exactly_one=True)
+        address = location.raw["address"]
+        city = address.get("city", address.get("town", address.get("village", "")))
+        country = address.get("country", "")
+        results.append((hotel_name, city, country))
+    except Exception as e:
+        results.append((hotel_name, None, None))
+    sleep(1)  # avoid rate limiting
+
+# Convert results to a DataFrame or export
+
+
+# |%%--%%| <xySrlD9GvB|H9jgRBngDP>
+
+for r in results:
+    print(r)
+
+
+# |%%--%%| <H9jgRBngDP|CvlScRDSI5>
+
+import pandas as pd
+
+geo_df = pd.DataFrame(results, columns=["Hotel_Name", "City", "Country"])
+print(geo_df.head())
+
+# |%%--%%| <CvlScRDSI5|csYybb9Fw1>
+r"""°°°
+We attempted to use the same code in order to retrieve the country and city
+information for all hotels.
+
+However, we encountered issues due to limitations of the API service (Nominatim).
+Despite trying to adjust the timeout settings and add delays between requests,
+the process proved to be very time-consuming.
+
+For this reason, we applied the method only to a sample of 17 hotels.
+
+°°°"""
+# |%%--%%| <csYybb9Fw1|xATckEweYf>
+
+clean_reduced_hotels_most_reviews.columns
+
+
+# |%%--%%| <xATckEweYf|rWV690OQcU>
+
+from pyspark.sql.functions import size
+
+empty_counts = clean_reduced_hotels_most_reviews.select(
+    (size(col("Negative_Lemmatized")) == 0).alias("Negative_Lemmatized_empty"),
+    (size(col("Positive_Lemmatized")) == 0).alias("Positive_Lemmatized_empty")
+).groupBy().sum()
+
+empty_counts.show()
+
+# |%%--%%| <rWV690OQcU|aFPmARxtkN>
+
+from pyspark.sql.functions import col, sum
+
+clean_reduced_hotels_most_reviews.select(
+    sum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
+    sum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
+).show()
+
+
+# |%%--%%| <aFPmARxtkN|mzSFBwzT9z>
+
+null_or_empty = clean_reduced_hotels_most_reviews.filter(
+    col("Negative_Lemmatized").isNull() | (size(col("Negative_Lemmatized")) == 0) |
+    col("Positive_Lemmatized").isNull() | (size(col("Positive_Lemmatized")) == 0)
+)
+
+print(f"Rows with null or empty lemmatized tokens: {null_or_empty.count()}")
+
+
+# |%%--%%| <mzSFBwzT9z|OQbY7KqkgW>
+
+# Count rows where Negative_Lemmatized is an empty array
+empty_negative = clean_reduced_hotels_most_reviews.filter(size(col("Negative_Lemmatized")) == 0).count()
+print(f"Rows with empty Negative_Lemmatized: {empty_negative}")
+
+# Count rows where Positive_Lemmatized is an empty array
+empty_positive = clean_reduced_hotels_most_reviews.filter(size(col("Positive_Lemmatized")) == 0).count()
+print(f"Rows with empty Positive_Lemmatized: {empty_positive}")
+
+# Optional: Count rows where both are empty
+both_empty = clean_reduced_hotels_most_reviews.filter(
+    (size(col("Negative_Lemmatized")) == 0) & (size(col("Positive_Lemmatized")) == 0)
+).count()
+print(f"Rows where BOTH are empty: {both_empty}")
+
+
+# |%%--%%| <OQbY7KqkgW|Jm5S6Rcz5i>
+clean_reduced_hotels_most_reviews.show()
+
+# |%%--%%| <Jm5S6Rcz5i|QhRDemnwk9>
+r"""°°°
+In this approach, we aimed to separate the positive and negative components of each
+hotel review so they could be treated as independent training samples.
+
+To achieve this, we filtered out rows where either the positive or negative lemmatized
+arrays were non-empty. We then created two separate DataFrames — one containing
+only the positive reviews (labeled as 1) and another containing only the negative
+reviews (labeled as 0) — and combined them into a single dataset. This allowed us
+to isolate each sentiment and increase the volume of meaningful training data.
+
+We proceeded to build a machine learning pipeline using PySpark, applying HashingTF
+and IDF for feature extraction and training a logistic regression model.
+
+Finally, we evaluated the model’s performance using the AUC metric to assess its
+ability to distinguish between positive and negative sentiment.
+°°°"""
+# |%%--%%| <QhRDemnwk9|4ZqUBJva0o>
+
+# Filter rows that have non-empty lemmatized arrays
+df = clean_reduced_hotels_most_reviews.filter(
+    (size(col("Positive_Lemmatized")) > 0) | (size(col("Negative_Lemmatized")) > 0)
+)
+
+# Create one DataFrame for positive reviews
+positive_df = df.filter(size(col("Positive_Lemmatized")) > 0) \
+    .withColumn("lemmatized_tokens", col("Positive_Lemmatized")) \
+    .withColumn("label", lit(1)) \
+    .select("lemmatized_tokens", "label")
+
+# Create one DataFrame for negative reviews
+negative_df = df.filter(size(col("Negative_Lemmatized")) > 0) \
+    .withColumn("lemmatized_tokens", col("Negative_Lemmatized")) \
+    .withColumn("label", lit(0)) \
+    .select("lemmatized_tokens", "label")
+
+# Combine both
+df = positive_df.union(negative_df)
+
+# Select only the necessary columns for training
+df = df.select("lemmatized_tokens", "label")
+
+# Define the ML pipeline stages
+hashing_tf = HashingTF(inputCol="lemmatized_tokens", outputCol="raw_features", numFeatures=10000)
+idf = IDF(inputCol="raw_features", outputCol="features")
+lr = LogisticRegression(featuresCol="features", labelCol="label")
+
+pipeline = Pipeline(stages=[hashing_tf, idf, lr])
+
+# Split into training and test sets
+train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+
+# Train the model
+model = pipeline.fit(train_data)
+
+# Make predictions and evaluate
+predictions = model.transform(test_data)
+
+evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+auc = evaluator.evaluate(predictions)
+
+print(f"AUC on test set: {auc}")
+
+# Show predictions
+predictions.select("lemmatized_tokens", "label", "prediction").show(5, truncate=False)
+
+# |%%--%%| <4ZqUBJva0o|g88tERS2Fk>
+
+df.groupBy("label").count().show()
+
+# |%%--%%| <g88tERS2Fk|Pi1t2FA3gK>
+
+# TODO: This looks like a duplicate
+
+# Prepare positive and negative samples
+
+# Filter non-empty reviews
+pos_df = clean_reduced_hotels_most_reviews.filter(lower(col("Positive_Review")) != "no positive") \
+    .withColumn("text", col("Positive_Review")) \
+    .withColumn("label", lit(1)) \
+    .select("text", "label")
+
+neg_df = clean_reduced_hotels_most_reviews.filter(lower(col("Negative_Review")) != "no negative") \
+    .withColumn("text", col("Negative_Review")) \
+    .withColumn("label", lit(0)) \
+    .select("text", "label")
+
+# Combine both into a single DataFrame
+df = pos_df.union(neg_df)
+
+# Define the text processing pipeline
+tokenizer = Tokenizer(inputCol="text", outputCol="tokens")
+remover = StopWordsRemover(inputCol="tokens", outputCol="filtered_tokens")
+hashing_tf = HashingTF(inputCol="filtered_tokens", outputCol="raw_features", numFeatures=10000)
+idf = IDF(inputCol="raw_features", outputCol="features")
+lr = LogisticRegression(featuresCol="features", labelCol="label")
+
+pipeline = Pipeline(stages=[tokenizer, remover, hashing_tf, idf, lr])
+
+# Split into training and test sets
+train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+
+# Train the model
+model = pipeline.fit(train_data)
+
+# Evaluate
+predictions = model.transform(test_data)
+evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+auc = evaluator.evaluate(predictions)
+
+print(f"AUC on test set: {auc}")
+
+# Show some predictions
+predictions.select("text", "label", "prediction").show(5, truncate=False)
+
+# |%%--%%| <Pi1t2FA3gK|mR2ScC4orh>
+
+# TODO: Why are we adding new text? Justify and maybe add to new section
+
+new_texts = [
+    "The staff was incredibly helpful and the room was very clean.",
+    "We waited an hour for check-in and the bathroom was disgusting."
+]
+
+# Create DataFrame
+new_df = spark.createDataFrame([(t,) for t in new_texts], ["text"])
+
+# Predict
+model.transform(new_df).select("text", "prediction").show(truncate=False)
+
+
+# |%%--%%| <mR2ScC4orh|YIGu2QAV6w>
+
+df.groupBy("label").count().show()
+
+
+# |%%--%%| <YIGu2QAV6w|V2m2sPHRPt>
+
+# Get predictions and actual labels
+results = predictions.select("label", "prediction")
+
+# Calculate confusion matrix components
+tp = results.filter((col("label") == 1) & (col("prediction") == 1)).count()
+tn = results.filter((col("label") == 0) & (col("prediction") == 0)).count()
+fp = results.filter((col("label") == 0) & (col("prediction") == 1)).count()
+fn = results.filter((col("label") == 1) & (col("prediction") == 0)).count()
+
+print(f"Confusion Matrix:")
+print(f"True Positives:  {tp}")
+print(f"True Negatives:  {tn}")
+print(f"False Positives: {fp}")
+print(f"False Negatives: {fn}")
+
+# |%%--%%| <V2m2sPHRPt|QzuNyoskHe>
+
+for metric in ["accuracy", "f1", "weightedPrecision", "weightedRecall"]:
+    evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName=metric)
+    print(f"{metric.capitalize()}: {evaluator.evaluate(predictions):.4f}")
+
+# |%%--%%| <QzuNyoskHe|JKumUXvhZW>
+
+new_texts = [
+    "The room was clean and quiet. Excellent service!",
+    "It was a terrible experience, dirty bathroom and rude staff.",
+    "Great value for the price.",
+    "The air conditioning didn’t work, and it was very noisy.",
+    "Check-in was fast and smooth.",
+    "No towels in the room and the shower was broken."
+]
+
+# Create DataFrame
+new_df = spark.createDataFrame([(t,) for t in new_texts], ["text"])
+
+# Predict
+predictions = model.transform(new_df)
+
+# Show predicted label and probability
+predictions.select("text", "prediction", "probability").show(truncate=False)
+
+# |%%--%%| <JKumUXvhZW|qIC9fuCYlt>
+r"""°°°
+ Adding bigrams (n-grams) to capture short phrases like:
+"no towels"
+
+"was broken"
+
+"not clean"
+
+These phrases are more meaningful than isolated words like "no" or "towels" on their own.
+
+
+°°°"""
+# |%%--%%| <qIC9fuCYlt|hTySuUS0K2>
+
+# Prepare positive and negative samples
+
+# Filter out empty placeholder reviews
+pos_df = cleaned.filter(lower(col("Positive_Review")) != "no positive") \
+    .withColumn("text", col("Positive_Review")) \
+    .withColumn("label", lit(1)) \
+    .select("text", "label")
+
+neg_df = cleaned.filter(lower(col("Negative_Review")) != "no negative") \
+    .withColumn("text", col("Negative_Review")) \
+    .withColumn("label", lit(0)) \
+    .select("text", "label")
+
+# Combine positive and negative into one DataFrame
+df = pos_df.union(neg_df)
+
+# Define the text processing pipeline with bigrams
+tokenizer = Tokenizer(inputCol="text", outputCol="tokens")
+remover = StopWordsRemover(inputCol="tokens", outputCol="filtered_tokens")
+bigrams = NGram(n=2, inputCol="filtered_tokens", outputCol="bigrams")
+hashing_tf = HashingTF(inputCol="bigrams", outputCol="raw_features", numFeatures=10000)
+idf = IDF(inputCol="raw_features", outputCol="features")
+lr = LogisticRegression(featuresCol="features", labelCol="label")
+
+pipeline = Pipeline(stages=[tokenizer, remover, bigrams, hashing_tf, idf, lr])
+
+# Train/test split
+train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+
+# Train the model
+model = pipeline.fit(train_data)
+
+# Evaluate the model
+predictions = model.transform(test_data)
+
+evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+auc = evaluator.evaluate(predictions)
+print(f"AUC on test set: {auc}")
+
+# View sample predictions with probability
+predictions.select("text", "label", "prediction", "probability").show(5, truncate=False)
+
+# Confusion matrix (basic form)
+predictions.groupBy("label", "prediction").count().orderBy("label", "prediction").show()
+
+# |%%--%%| <hTySuUS0K2|Rincg7DGyl>
+
+# New review examples
+new_texts = [
+    "No towels in the room and the shower was broken.",
+    "Everything was clean and comfortable.",
+    "Staff were rude and unhelpful.",
+    "Check-in was fast and easy.",
+    "The hotel was noisy and poorly maintained."
+]
+
+# Create DataFrame for new inputs
+new_df = spark.createDataFrame([(t,) for t in new_texts], ["text"])
+
+# Predict
+predicted_new = model.transform(new_df)
+predicted_new.select("text", "prediction", "probability").show(truncate=False)
+
+# |%%--%%| <Rincg7DGyl|l0OqeSn4oX>
+
+df.groupBy("label").count().orderBy("label").show()
+
+
+# |%%--%%| <l0OqeSn4oX|NsqAR92lLq>
+r"""°°°
+Option 1: Combine unigrams + bigrams
+This helps the model learn both:
+
+Individual words like "clean", "rude", "broken"
+
+Phrases like "no towels", "was broken"
+°°°"""
+# |%%--%%| <NsqAR92lLq|oJR7sfPLSq>
+
+# Tokenize and remove stopwords
+tokenizer = Tokenizer(inputCol="text", outputCol="tokens")
+remover = StopWordsRemover(inputCol="tokens", outputCol="filtered_tokens")
+
+# Create unigrams and bigrams
+unigrams_tf = HashingTF(inputCol="filtered_tokens", outputCol="uni_raw", numFeatures=5000)
+bigrams = NGram(n=2, inputCol="filtered_tokens", outputCol="bigrams")
+bigrams_tf = HashingTF(inputCol="bigrams", outputCol="bi_raw", numFeatures=5000)
+
+# Combine unigrams and bigrams features
+assembler = VectorAssembler(inputCols=["uni_raw", "bi_raw"], outputCol="raw_features")
+
+# Apply IDF
+idf = IDF(inputCol="raw_features", outputCol="features")
+
+# Classifier
+lr = LogisticRegression(featuresCol="features", labelCol="label")
+
+# Build pipeline
+pipeline = Pipeline(stages=[
+    tokenizer,
+    remover,
+    unigrams_tf,
+    bigrams,
+    bigrams_tf,
+    assembler,
+    idf,
+    lr
+])
+
+# |%%--%%| <oJR7sfPLSq|CgfRc5fyD2>
+
+train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+model = pipeline.fit(train_data)
+predictions = model.transform(test_data)
+
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+auc = evaluator.evaluate(predictions)
+print(f"AUC (Unigrams + Bigrams): {auc}")
+
+# |%%--%%| <CgfRc5fyD2|Gi2xCvrrnM>
+
+df.groupBy("label").count().show()
+
+# |%%--%%| <Gi2xCvrrnM|alKv12MNAc>
+
+evaluator_f1 = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="f1")
+evaluator_precision = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="precisionByLabel")
+evaluator_recall = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="recallByLabel")
+
+f1 = evaluator_f1.evaluate(predictions)
+precision = evaluator_precision.evaluate(predictions)
+recall = evaluator_recall.evaluate(predictions)
+
+print(f"F1 Score: {f1}")
+print(f"Precision: {precision}")
+print(f"Recall: {recall}")
+
+# |%%--%%| <alKv12MNAc|3uuJOizROk>
+
+from IPython import display
+
+evaluation_summary = """
+### Evaluation Summary
+
+| Metric     | Value  | Interpretation                                              |
+|------------|--------|-------------------------------------------------------------|
+| **AUC**    | 0.973  | Excellent. Your model ranks positive > negative reliably.   |
+| **F1 Score** | 0.922 | Strong overall balance between precision and recall.       |
+| **Precision** | 0.904 | 90.4% of predicted positives were correct (low false positives). |
+| **Recall** | 0.915  | 91.5% of actual positives were detected (low false negatives). |
+"""
+
+display(display.Markdown(evaluation_summary))
+
+# |%%--%%| <3uuJOizROk|mE9kiS7tJU>
+r"""°°°
+Confusion Matrix
+°°°"""
+# |%%--%%| <mE9kiS7tJU|bHLTmVvKU5>
+
+# Assuming `predictions` is the DataFrame after model.transform()
+
+predictions.select("label", "prediction") \
+    .groupBy("label", "prediction") \
+    .count() \
+    .orderBy("label", "prediction") \
+    .show()
+
+
+# |%%--%%| <bHLTmVvKU5|grVPsgG6os>
+
+# Example new reviews to classify
+new_texts = [
+    "The room was spotless and the staff were incredibly friendly.",
+    "There was no hot water and the heater was broken.",
+    "Excellent location and fast check-in process.",
+    "Unhelpful reception and dirty sheets.",
+    "Everything was perfect! I would stay again.",
+    "No towels in the room and the bathroom smelled terrible."
+]
+
+# Create DataFrame from new inputs
+new_df = spark.createDataFrame([(text,) for text in new_texts], ["text"])
+
+# Use your trained pipeline model to predict
+new_predictions = model.transform(new_df)
+
+# Show predicted label and probability
+new_predictions.select("text", "prediction", "probability").show(truncate=False)
+
+# |%%--%%| <grVPsgG6os|4tVQrJJkbG>
+r"""°°°
+### MODEL 4
+°°°"""
+# |%%--%%| <4tVQrJJkbG|ZI24XwjvJH>
+
+hotel_avg_stats_filtered.show()
+
+# |%%--%%| <ZI24XwjvJH|Ajjt0gBVk4>
+
+# Sort hotels by average number of reviews in ascending order
+hotel_avg_stats_filtered.orderBy("avg_Total_Number_of_Reviews", ascending=True).show()
+
+# |%%--%%| <Ajjt0gBVk4|lopB5kVTUH>
+r"""°°°
+Here we create a new column called `star_rating`, where we convert the average score
+of each hotel into a 1–5 star scale.
+
+This helps us simplify the target variable for classification tasks.
+°°°"""
+# |%%--%%| <lopB5kVTUH|JXPTCt0M6q>
+
+# Here we add a new column that assigns a star rating (1 to 5) based on the avg_Average_Score of each hotel
+hotel_with_stars = hotel_avg_stats_filtered.withColumn(
+    "star_rating",
+    when(col("avg_Average_Score") >= 9, 5)
+    .when(col("avg_Average_Score") >= 8, 4)
+    .when(col("avg_Average_Score") >= 6, 3)
+    .when(col("avg_Average_Score") >= 5, 2)
+    .otherwise(1)
+)
+
+# |%%--%%| <JXPTCt0M6q|s46x0T0xAm>
+
+feature_columns = [
+    "avg_Additional_Number_of_Scoring",
+    "avg_Total_Number_of_Reviews",
+    "avg_Total_Number_of_Reviews_Reviewer_Has_Given",
+    "avg_days_since_review",
+    "avg_lat",
+    "avg_lng",
+    "avg_Num_Tags",
+    "avg_Positive_Lemma_Count",
+    "avg_Negative_Lemma_Count",
+    "review_count"
+]
+
+# |%%--%%| <s46x0T0xAm|Pgtnhh6luM>
+
+# Split the data into training and test sets
+train_data, test_data = hotel_with_stars.randomSplit([0.8, 0.2], seed=42)
+
+# Assemble features
+assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
+
+# Create a classifier
+rf = RandomForestClassifier(labelCol="star_rating", featuresCol="features", numTrees=100)
+
+# Create pipeline
+pipeline = Pipeline(stages=[assembler, rf])
+
+# Fit model on training data
+model = pipeline.fit(train_data)
+
+# Make predictions on test data
+predictions = model.transform(test_data)
+
+
+# |%%--%%| <Pgtnhh6luM|lCPAAKMTmI>
+
+# Show actual vs predicted star ratings side by side
+predictions.select("Hotel_Name", "avg_Average_Score", "star_rating", "prediction").show()
+
+# |%%--%%| <lCPAAKMTmI|FWNZ4gRXAS>
+
+# Filter and show misclassified hotels
+misclassified = predictions.filter(col("star_rating") != col("prediction"))
+misclassified.select("Hotel_Name", "avg_Average_Score", "star_rating", "prediction").show()
+
+# |%%--%%| <FWNZ4gRXAS|cycRq5ilkP>
+
+# Accuracy
+evaluator_acc = MulticlassClassificationEvaluator(
+    labelCol="star_rating", predictionCol="prediction", metricName="accuracy"
+)
+accuracy = evaluator_acc.evaluate(predictions)
+
+# F1-score
+evaluator_f1 = MulticlassClassificationEvaluator(
+    labelCol="star_rating", predictionCol="prediction", metricName="f1"
+)
+f1 = evaluator_f1.evaluate(predictions)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"F1 Score: {f1:.4f}")
+
+# |%%--%%| <cycRq5ilkP|vX7WfvgiQ0>
+
+# Confusion matrix (counts of actual vs predicted)
+confusion_matrix = predictions.groupBy("star_rating", "prediction").count().orderBy("star_rating", "prediction")
+confusion_matrix.show()
+
+# |%%--%%| <vX7WfvgiQ0|cCVlT0E6so>
+
+# Group by actual and predicted values and convert to pandas
+confusion_pd = predictions.groupBy("star_rating", "prediction").count().toPandas()
+
+# |%%--%%| <cCVlT0E6so|GiaPLdzzM0>
+
+# Pivot the confusion matrix for plotting
+conf_matrix = confusion_pd.pivot(index="star_rating", columns="prediction", values="count").fillna(0)
+
+# |%%--%%| <GiaPLdzzM0|0OXjiDUbJq>
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt="g", cmap="Blues")
+plt.title("Confusion Matrix (Actual vs Predicted Star Ratings)")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+# |%%--%%| <0OXjiDUbJq|AvvpHFhvCN>
+
+# Accuracy
+evaluator_acc = MulticlassClassificationEvaluator(labelCol="star_rating", predictionCol="prediction", metricName="accuracy")
+accuracy = evaluator_acc.evaluate(predictions)
+
+# F1 Score
+evaluator_f1 = MulticlassClassificationEvaluator(labelCol="star_rating", predictionCol="prediction", metricName="f1")
+f1_score = evaluator_f1.evaluate(predictions)
+
+print(f"Accuracy: {accuracy:.4f}")
+print(f"F1 Score: {f1_score:.4f}")
+
+# |%%--%%| <AvvpHFhvCN|hb1y1R2Dv6>
+r"""°°°
+Since we are going to build classification models to predict hotel star ratings,
+we first check the distribution of the `star_rating` column.
+
+This helps us understand whether the classes are balanced or imbalanced.
+If some star ratings appear much more frequently than others, it could affect the
+performance of our models, especially in terms of fairness and accuracy across classes.
+
+°°°"""
+# |%%--%%| <hb1y1R2Dv6|6v31mzFQAp>
+
+# we count how many hotels belong to each star rating so we can check if the data is balanced
+hotel_with_stars.groupBy("star_rating").count().orderBy("star_rating").show()
+
+# |%%--%%| <6v31mzFQAp|a7Sn7HRl8e>
+r"""°°°
+We can say that the dataset is heavily skewed toward higher-rated hotels,
+especially 4-star ones. This imbalance might affect model performance if we're
+analyzing or predicting based on star rating, as the underrepresented classes (like 2-star)
+may not provide enough data to learn from effectively.
+°°°"""
+# |%%--%%| <a7Sn7HRl8e|e6xgJI2Bez>
+r"""°°°
+Initially, we will begin building the model without addressing the class imbalance
+in hotel star ratings. This approach will give us a baseline understanding of the
+model's performance under real-world conditions, where higher-rated hotels (e.g., 4-star)
+dominate the dataset.
+
+However, we will later apply balancing techniques such as resampling, SMOTE, or
+class weighting, because we anticipate the following issues:
+°°°"""
+# |%%--%%| <e6xgJI2Bez|9XV7r3aiHc>
+# we shift the star ratings to start from 0 so they work with models like Naive Bayes and MLP
+hotel_adjusted = hotel_with_stars.withColumn("star_rating_adj", col("star_rating") - 1)
+
+# we split our dataset into train and test sets (80% train, 20% test)
+train_data, test_data = hotel_adjusted.randomSplit([0.8, 0.2], seed=42)
+
+# we use the same assembler to turn our features into a single feature vector
+assembler = VectorAssembler(inputCols=feature_columns, outputCol="features")
+
+# here we define the models we want to try out
+lr = LogisticRegression(labelCol="star_rating_adj", featuresCol="features", maxIter=100)
+dt = DecisionTreeClassifier(labelCol="star_rating_adj", featuresCol="features")
+rf = RandomForestClassifier(labelCol="star_rating_adj", featuresCol="features", numTrees=100)
+mlp = MultilayerPerceptronClassifier(
+    labelCol="star_rating_adj",
+    featuresCol="features",
+    layers=[len(feature_columns), 10, 5],  # we assume we have 5 different star ratings (0–4)
+    maxIter=100
+)
+
+# we set up evaluators to calculate accuracy and F1 score
+evaluator_acc = MulticlassClassificationEvaluator(labelCol="star_rating_adj", predictionCol="prediction", metricName="accuracy")
+evaluator_f1 = MulticlassClassificationEvaluator(labelCol="star_rating_adj", predictionCol="prediction", metricName="f1")
+
+# function where we train the model, make predictions, and print the results
+def evaluate_model(name, classifier):
+    pipeline = Pipeline(stages=[assembler, classifier])
+    model = pipeline.fit(train_data)
+    predictions = model.transform(test_data)
+
+    acc = evaluator_acc.evaluate(predictions)
+    f1 = evaluator_f1.evaluate(predictions)
+
+    print(f"{name:<25} - Accuracy: {acc:.4f}, F1 Score: {f1:.4f}")
+    return predictions
+
+# now we run all the models and see how they perform
+evaluate_model("Logistic Regression", lr)
+evaluate_model("Decision Tree", dt)
+evaluate_model("Random Forest", rf)
+evaluate_model("Multilayer Perceptron", mlp)
+
+
+# |%%--%%| <9XV7r3aiHc|Rb3fN85vfz>
+r"""°°°
+Here we can see the performance of different classification models on the task of
+predicting hotel star ratings.
+
+Logistic Regression achieved the best results, with an accuracy of 71.25% and an
+F1 Score of 69.85%, showing a good balance between correct predictions and overall
+model consistency.
+
+The Decision Tree model followed closely, reaching 70.42% accuracy
+and a 67.90% F1 Score, which indicates decent performance but slightly less robust
+than Logistic Regression.
+
+Random Forest performed worse than expected, with an accuracy of 69.58% and a lower
+F1 Score of 64.67%, possibly due to overfitting or sensitivity to the class distribution.
+
+The Multilayer Perceptron had the lowest scores, achieving 65.83% accuracy and just
+52.27% F1 Score, suggesting that the model struggled to generalize effectively across
+the multiple classes.
+
+Overall, Logistic Regression appears to be the most suitable model for this dataset
+in its current form.
+
+°°°"""
+# |%%--%%| <Rb3fN85vfz|EepiOHODFA>
+r"""°°°
+### Clustering
+°°°"""
+# |%%--%%| <EepiOHODFA|61oAK1WM9e>
+
+hotel_with_stars.count()
+
+# |%%--%%| <61oAK1WM9e|Lr6Tjmi2Et>
+
+hotel_with_stars.show()
+
+# |%%--%%| <Lr6Tjmi2Et|FgxVbBx04b>
+
+cleaned.count()
+
+# |%%--%%| <FgxVbBx04b|KZ6SzGKb0K>
+
+cleaned.show()
+
+# |%%--%%| <KZ6SzGKb0K|UOG12irSOp>
+r"""°°°
+Here we use K-Means clustering to group hotels based on review-related features
+such as average score, sentiment counts, and review activity.
+
+We then compare the resulting clusters with the actual star ratings to see if
+similar hotels tend to share the same rating.
+°°°"""
+# |%%--%%| <UOG12irSOp|PPffkthyu0>
+r"""°°°
+We are using the additional dataset we previously created with star ratings
+through the machine learning model.
+°°°"""
+# |%%--%%| <PPffkthyu0|AOLNvYkzwJ>
+
+# we choose the features we think are most relevant for grouping the hotels based on guest reviews and behavior
+selected_features = [
+    "avg_Average_Score",
+    "avg_Positive_Lemma_Count",
+    "avg_Negative_Lemma_Count",
+    "avg_Num_Tags",
+    "avg_Total_Number_of_Reviews",
+    "avg_days_since_review"
+]
+
+# we turn the selected columns into a single feature vector so we can use it in the KMeans algorithm
+assembler = VectorAssembler(inputCols=selected_features, outputCol="features")
+cluster_input = assembler.transform(hotel_with_stars)
+
+# we apply KMeans to split the hotels into 3 groups based on the features we picked
+kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=3, seed=42)
+model = kmeans.fit(cluster_input)
+clustered = model.transform(cluster_input)
+
+# we now look at how the actual star ratings are spread across the different clusters
+clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
+
+
+# |%%--%%| <AOLNvYkzwJ|0ZU0m76OK2>
+r"""°°°
+The table shows how many hotels in each cluster (0, 1, or 2) belong to each star
+rating category (from 2 to 5).
+
+This helps us understand whether the clusters formed by K-Means align with the
+actual hotel quality.
+
+Cluster 0 is clearly the largest and is mainly made up of 4-star hotels (622)
+and a significant number of 5-star hotels (244), with fewer 3-star (143) and
+just one 2-star hotel.
+
+This suggests that Cluster 0 likely represents well-rated or popular hotels with
+strong guest feedback. Cluster 1 is much smaller, with most hotels being 4-star (41),
+followed by 3-star (13) and just a few 5-star hotels (5).
+
+It possibly represents average-performing or low-volume hotels with less consistent
+review patterns. Cluster 2 mostly contains 4-star hotels (234), along with some
+3-star (60) and 5-star hotels (34), which might indicate solid mid- to high-performing
+hotels with slightly different review characteristics than those in Cluster 0.
+
+Overall, the clustering captures differences in hotel quality to some extent,
+with Cluster 0 standing out as the group with the highest-rated hotels.
+°°°"""
+# |%%--%%| <0ZU0m76OK2|q9lQWJy6aj>
+r"""°°°
+To improve the clustering and better understand how well our data is grouped,
+we decided to test different values for k (the number of clusters).
+
+This is an important step in clustering, since choosing the right number of clusters
+can reveal more meaningful patterns.
+
+In PySpark, we can evaluate this by checking the Within Set Sum of Squared Errors (WSS),
+also known as the cost or inertia.
+
+By calculating the WSS for different values of k (for example from 2 to 8),
+we can use the elbow method to find the point where increasing the number of clusters
+stops giving us significantly better results. That point usually indicates the
+most appropriate number of clusters.
+°°°"""
+# |%%--%%| <q9lQWJy6aj|ciZ9LvWoVG>
+r"""°°°
+Here we test different values for k to figure out which number of clusters works best.
+We use the Within Set Sum of Squared Errors (WSS) to evaluate each model and look
+for the point where the error stops dropping significantly — that helps us decide
+the optimal number of clusters.
+
+°°°"""
+# |%%--%%| <ciZ9LvWoVG|e0iXO2BSRA>
+
+# we test different values for k to find the best number of clusters
+for k in range(2, 9):
+    kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=k, seed=42)
+    model = kmeans.fit(cluster_input)
+    wss = model.summary.trainingCost
+    print(f"k = {k}, Within Set Sum of Squared Errors = {wss:.2f}")
+
+
+# |%%--%%| <e0iXO2BSRA|k21qJYhZFI>
+r"""°°°
+We tested different values of k and saw that the WSS drops significantly until
+around k = 4 or 5, suggesting that these are good options for clustering.
+Based on this, we now continue with k = 4 to see how the clusters relate to star ratings.
+
+**Next, we’ll analyze the average values in each cluster to understand what kind
+of hotels each group represents, and possibly use the cluster ID as a new feature
+in our classification models.**
+
+°°°"""
+# |%%--%%| <k21qJYhZFI|PmJaowXW4O>
+r"""°°°
+TODO: Mention elbow method on plot to vizualize WDD drop as k increased
+
+Since we saw that k = 4 offers a good balance between model simplicity and error
+reduction, we use this value to apply KMeans clustering on the hotel datas
+
+°°°"""
+# |%%--%%| <PmJaowXW4O|w1SxUqvYA4>
+
+# We start by selecting the features that we believe best represent hotel review behavior
+selected_features = [
+    "avg_Average_Score",
+    "avg_Positive_Lemma_Count",
+    "avg_Negative_Lemma_Count",
+    "avg_Num_Tags",
+    "avg_Total_Number_of_Reviews",
+    "avg_days_since_review"
+]
+
+# We combine the selected features into a single vector to prepare the data for clustering
+assembler = VectorAssembler(inputCols=selected_features, outputCol="features")
+cluster_input = assembler.transform(hotel_with_stars)
+
+# Since we identified k = 4 as a good choice, we apply KMeans to group the hotels into 4 clusters
+kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
+model = kmeans.fit(cluster_input)
+clustered = model.transform(cluster_input)
+
+# We check how the actual star ratings are distributed across the clusters
+clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
+
+# We also compute the average of each feature per cluster to understand what characterizes each group
+clustered.groupBy("cluster").agg({col: "mean" for col in selected_features}).show()
+
+
+# |%%--%%| <w1SxUqvYA4|H7YuWJgHtx>
+r"""°°°
+Our clustering results show that Cluster 0 is the largest and most diverse,
+mainly composed of 4- and 5-star hotels, suggesting it's the core group of
+well-rated hotels.
+
+Clusters 1 and 2 also include mostly 4-star hotels but differ slightly in their
+mix of 3- and 5-star ratings, indicating variations in review behavior or quality.
+
+Cluster 3 is the smallest, with only 3- and 4-star hotels, possibly representing
+a niche or lower-activity group.
+
+Overall, the clusters align reasonably well with hotel star ratings.
+°°°"""
+# |%%--%%| <H7YuWJgHtx|8CXvDMOEUt>
+pca = PCA(k=2, inputCol="features", outputCol="pca_features")
+pca_model = pca.fit(cluster_input)
+pca_result = pca_model.transform(cluster_input)
+
+# Add cluster labels
+pca_result = model.transform(pca_result)
+
+# Convert to Pandas for plotting
+pandas_df = pca_result.select("pca_features", "cluster").toPandas()
+pandas_df[['PC1', 'PC2']] = pandas_df['pca_features'].apply(lambda x: pd.Series(x.toArray()))
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8, 6))
+for cluster_id in pandas_df['cluster'].unique():
+    subset = pandas_df[pandas_df['cluster'] == cluster_id]
+    plt.scatter(subset['PC1'], subset['PC2'], label=f'Cluster {cluster_id}')
+plt.legend()
+plt.title("PCA Projection of Clusters")
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.show()
+
+
+# |%%--%%| <8CXvDMOEUt|ox7tw5Q6TU>
+r"""°°°
+In this step, we use the ClusteringEvaluator to calculate the Silhouette Score,
+which helps us assess the quality of our clusters.
+
+We set the evaluator to use squared Euclidean distance and apply it to our clustered data.
+The resulting score tells us how well each hotel fits within its assigned cluster,
+and a higher value indicates better-defined and more separated clusters.
+
+°°°"""
+# |%%--%%| <ox7tw5Q6TU|nWqjk3ZQGx>
+
+evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
+silhouette = evaluator.evaluate(clustered)
+print(f"Silhouette Score: {silhouette:.3f}")
+
+# |%%--%%| <nWqjk3ZQGx|6Bp42ZWUe9>
+r"""°°°
+To assess the quality of our clustering, we calculated the `Silhouette Score`,
+which ranges from **-1 to 1**:
+  - A score close to **+1** means the hotel is well-matched to its cluster and far from others.
+  - A score around **0** indicates overlap between clusters.
+  - A negative score suggests possible misclassification.
+
+
+
+°°°"""
+# |%%--%%| <6Bp42ZWUe9|T8BtJvnqrL>
+r"""°°°
+We evaluated the quality of our clusters using the Silhouette Score and obtained
+a value of 0.754, which indicates that the clusters are well-defined and clearly separated.
+
+This high score suggests that most hotels are strongly associated with their assigned
+cluster and not overlapping with others, supporting our choice of using k = 4.
+
+It also confirms that the features we selected provide meaningful structure for
+grouping the hotels based on guest review behavior.
+°°°"""
+# |%%--%%| <T8BtJvnqrL|xG18lhe8Va>
+
+from pyspark.ml.clustering import BisectingKMeans
+bkm = BisectingKMeans(featuresCol="features", predictionCol="cluster", k=4)
+bkm_model = bkm.fit(cluster_input)
+bkm_clustered = bkm_model.transform(cluster_input)
+
+
+# |%%--%%| <xG18lhe8Va|eF9FEYa8Ib>
+
+bkm_clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
+
+
+# |%%--%%| <eF9FEYa8Ib|bIZs5pdxJB>
+r"""°°°
+In this analysis, we grouped hotel reviews into four clusters and examined the
+distribution of star ratings (3, 4, and 5 stars) within each cluster.
+
+We observe that Cluster 0 contains the largest number of reviews, with a high
+concentration of 4- and 5-star ratings, suggesting mostly positive feedback.
+
+Cluster 1 also shows a predominance of 4-star reviews but has fewer 5-star ratings
+compared to Cluster 0. Cluster 2 contains fewer reviews overall, with a noticeable
+drop in 5-star ratings, indicating a potential shift toward more neutral or slightly
+negative sentiment.
+
+Cluster 3 has the smallest number of reviews and a low count across all star levels,
+possibly representing outliers or a niche group of reviews.
+
+This distribution helps us interpret the nature of each cluster and assess how
+review sentiment varies across them.
+°°°"""
+# |%%--%%| <bIZs5pdxJB|tagiRGED5y>
+
+evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
+silhouette_bkm = evaluator.evaluate(bkm_clustered)
+print(f"Silhouette Score (Bisecting KMeans): {silhouette_bkm:.3f}")
+
+
+# |%%--%%| <tagiRGED5y|b5qw0YAu7d>
+r"""°°°
+That’s a great result — even slightly better than your previous KMeans score (which was 0.754).
+
+
+°°°"""
+# |%%--%%| <b5qw0YAu7d|sc0poqgfg6>
+r"""°°°
+We evaluated Bisecting KMeans using the Silhouette Score and obtained a value of 0.768,
+which is slightly higher than the score we got with standard KMeans (0.754).
+
+This indicates that Bisecting KMeans produced better-separated and more cohesive
+clusters for our dataset.
+
+It suggests that the hierarchical approach of Bisecting KMeans may be more suitable
+for the structure of our hotel review features.
+
+Given this, we could consider using the Bisecting KMeans clustering results as
+our final version or at least give it more weight when interpreting the patterns
+in hotel groupings.
+°°°"""
+# |%%--%%| <sc0poqgfg6|1IZKU07ZzB>
+r"""°°°
+#### Clustering Method Comparison
+
+| Clustering Method    | Silhouette Score | Notes                                       |
+|----------------------|------------------|---------------------------------------------|
+| KMeans               | 0.754            | Good performance with well-separated groups |
+| Bisecting KMeans     | 0.768            | Slightly better cluster cohesion and separation |
+
+
+Based on the silhouette scores, Bisecting KMeans performed slightly better.
+Both methods produced meaningful clusters, but the hierarchical approach of
+Bisecting KMeans seems to fit our data structure more naturally.
+
+In this analysis, we applied clustering techniques to group hotels based on guest
+review behavior using features like average score, sentiment lemmas, and review count.
+We tested both **KMeans** and **Bisecting KMeans** algorithms with `k=4`, based
+on the elbow method and WSSSE analysis.
+
+The **Silhouette Score** for KMeans was **0.754**, while Bisecting KMeans achieved
+a slightly higher score of **0.768**, indicating better-defined clusters.
+
+We also confirmed these groupings visually through PCA, and observed that clusters
+aligned reasonably well with actual star ratings.
+
+These clusters reveal different behavioral patterns among hotels, e.g., high-rated,
+high-engagement vs. low-rated, low-activity groups, and can be useful for tasks
+like **targeted marketing**, **service improvement**, or as a **feature** in future
+predictive models.
+°°°"""
+# |%%--%%| <1IZKU07ZzB|D8hh8q4rLg>
+r"""°°°
+ Visualize Cluster Feature Averages with Bar Plot
+°°°"""
+# |%%--%%| <D8hh8q4rLg|kWUkcxpK5t>
+
+# Get mean of each feature per cluster
+
+means = bkm_clustered.groupBy("cluster").agg(
+    *[mean(c).alias(c) for c in selected_features]
+).toPandas().set_index("cluster")
+
+
+# |%%--%%| <kWUkcxpK5t|wwEuT7nDL1>
+
+# Normalize the feature means (Min-Max Scaling)
+normalized = (means - means.min()) / (means.max() - means.min())
+
+# Plot normalized data
+normalized.T.plot(kind='bar', figsize=(10, 6), legend=True)
+plt.title("Normalized Feature Values per Cluster (Bisecting KMeans)")
+plt.ylabel("Normalized Value (0-1)")
+plt.xlabel("Features")
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# |%%--%%| <wwEuT7nDL1|egyFAue58i>
+# This bar chart shows how each cluster differs across the features
+
+selected_features = [
+    "Reviewer_Score",
+    "Positive_Lemma_Count",
+    "Negative_Lemma_Count",
+    "Num_Tags",
+    "Total_Number_of_Reviews_Reviewer_Has_Given",
+    "days_since_review"
+]
+
+# |%%--%%| <egyFAue58i|YIDIOVP49p>
+
+assembler = VectorAssembler(inputCols=selected_features, outputCol="features")
+review_cluster_input = assembler.transform(cleaned)
+
+# |%%--%%| <YIDIOVP49p|1Gz04Nx2g8>
+
+print("Number of rows:", review_cluster_input.count())
+
+# |%%--%%| <1Gz04Nx2g8|ePjkMJK7I0>
+
+review_cluster_input.select(selected_features).printSchema()
+
+# |%%--%%| <ePjkMJK7I0|lsooRzUIq2>
+
+for col in selected_features:
+    review_cluster_input.select(col).filter(isnan(col) | isnull(col)).show(1)
+
+# |%%--%%| <lsooRzUIq2|NIiXvqxH41>
+
+# Try with only one valid column (e.g., 'Average_Score' or 'Reviewer_Score') if it exists
+cleaned.select("Reviewer_Score").filter("Reviewer_Score is not null").show()
+
+# |%%--%%| <NIiXvqxH41|6PIgnADl4m>
+
+kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
+model = kmeans.fit(review_cluster_input)
+review_clusters = model.transform(review_cluster_input)

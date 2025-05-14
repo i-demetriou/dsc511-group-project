@@ -7,7 +7,7 @@ r"""°°°
 - Anastasios Nikodimou
 - Ioannis Demetriou
 °°°"""
-#|%%--%%| <rh9kv9W4Ol|kmBYzlLg4s>
+# |%%--%%| <3TXSJ6triW|CB2Tvqi47w>
 r"""°°°
 TODO LIST
 
@@ -30,9 +30,8 @@ TODO LIST
 - Συνδυασμός content-based και collaborative filtering μεθόδων.
 - Να γίνει προσεκτική και σωστή υλοποίηση.
  - Clarify how we plan to interpret the `Additional_Number_of_Scoring` variable.
-
 °°°"""
-#|%%--%%| <kmBYzlLg4s|GGUyxopChC>
+# |%%--%%| <CB2Tvqi47w|IdP6yJ3P5X>
 
 # Importing libraries
 
@@ -73,9 +72,10 @@ from pyspark.ml.feature import (
     VectorAssembler,
 )
 from pyspark.ml.recommendation import ALS
-from pyspark.ml.regression import LinearRegression
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor
 
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.functions import(
     avg,
     array,
@@ -96,6 +96,7 @@ from pyspark.sql.functions import(
     regexp_extract,
     regexp_replace,
     size,
+    skewness,
     split,
     sum as Fsum,
     to_date,
@@ -109,7 +110,7 @@ sns.set_palette("viridis")
 # Get or create a SparkSession object
 spark = SparkSession.builder.appName("DSC511-GroupProject").master("local[*]").config("spark.driver.memory", "10g").getOrCreate()
 
-# |%%--%%| <GGUyxopChC|nDMJ7IrrCP>
+# |%%--%%| <IdP6yJ3P5X|pXyO3xDECF>
 r"""°°°
 ## Exploratory Data Analysis
 
@@ -142,7 +143,7 @@ The csv file contains 17 fields. The description of each field is as below:
 Here we took advantage of spark's ability to understand files compressed with gzip
 and we added the dataset in a `.csv.gz` form.
 °°°"""
-# |%%--%%| <nDMJ7IrrCP|xs7ZaAaLQf>
+# |%%--%%| <pXyO3xDECF|usXd8qo2BZ>
 
 # Loading dataset
 
@@ -152,15 +153,14 @@ and we added the dataset in a `.csv.gz` form.
 original = spark.read.csv('./data/Hotel_Reviews.csv.gz', header=True, inferSchema=True)
 original_schema = original.schema
 
-# |%%--%%| <xs7ZaAaLQf|nX7RFdUSeI>
+# |%%--%%| <usXd8qo2BZ|aXI30QWyU0>
 
 # Getting an idea about the dataset's shape
-
 original_count = original.count()
 print(f'Number of observations: {original_count}')
 print(f'Number of features: {len(original_schema)}')
 
-#|%%--%%| <nX7RFdUSeI|0nuKkhm8jM>
+# |%%--%%| <aXI30QWyU0|tlbRx1U2dk>
 r"""°°°
 ### Understanding the dataset
 
@@ -191,9 +191,8 @@ Review:
 - `Tags`: Tags reviewer gave the hotel.
 - `days_since_review`: Duration between the review date and scrape date.
 - `Additional_Number_of_Scoring`: There are also some guests who just made a scoring on the service rather than a review. This number indicates how many valid scores without review in there.
-
 °°°"""
-# |%%--%%| <0nuKkhm8jM|i6c1ifPpWm>
+# |%%--%%| <tlbRx1U2dk|Y4md3jpK6A>
 
 # We visualize the first entries in order to decide our next steps
 
@@ -204,7 +203,7 @@ original.select(
     'Review_Date', 'Negative_Review', 'Positive_Review', 'Tags', 'days_since_review'
     ).show(5, truncate=15)
 
-# |%%--%%| <i6c1ifPpWm|8zliPt5I2c>
+# |%%--%%| <Y4md3jpK6A|S9ZaPmqDUH>
 r"""°°°
 ### Cleaning the dataset
 
@@ -217,7 +216,7 @@ we want to check if:
 - There are obvious erroneous entries
 - There are missing features
 °°°"""
-# |%%--%%| <8zliPt5I2c|b9K4Vmutc1>
+# |%%--%%| <S9ZaPmqDUH|RazsqhR4nL>
 
 cleaned = original
 
@@ -230,28 +229,28 @@ missing_counts.show()
 
 # There are empty values in the dataset but the are not shown here
 
-# |%%--%%| <b9K4Vmutc1|mmWFNXJS3v>
+# |%%--%%| <RazsqhR4nL|vujMpItqQJ>
 r"""°°°
 After further investigating the dataset we noticed that there are empty values that are not treated as null. This may be happening becuase there are empty strings and not null values or they might contain invisible characters (e.g. space). We will replace the empty string with null so that Sparks recognises it and treats it as a missing value.
 °°°"""
-# |%%--%%| <mmWFNXJS3v|JKtTInWfB6>
+# |%%--%%| <vujMpItqQJ|9u2YOfPlvj>
 
 # Replacing empty strings with Spark's null
 for c in cleaned.columns:
     cleaned = cleaned.withColumn(c, when(trim(col(c)) == '', None).otherwise(col(c)))
 
-# |%%--%%| <JKtTInWfB6|SvhPe2XvbT>
+# |%%--%%| <9u2YOfPlvj|5Vx3eHrWEV>
 
 # Rerunning the previous code to check whether the empty strings got indeed converted to null
 
 missing_counts_new = cleaned.select([Fsum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
 missing_counts_new.show()
 
-# |%%--%%| <SvhPe2XvbT|bWInBpHXDP>
+# |%%--%%| <5Vx3eHrWEV|WmRZsDByAP>
 r"""°°°
 Now it is obvious that the columns `Reviewer_Nationality`, `Negative_Review` and `Positive_Review` contain null values that spark can identify.
 °°°"""
-# |%%--%%| <bWInBpHXDP|xBkdZ6OuZ7>
+# |%%--%%| <WmRZsDByAP|Fx6ByHdnPj>
 r"""°°°
 Since we trated the empty strings we can deal with null values that have other forms.
 In many datasets missing values can be represented as 'NA' (a string) instead of null.
@@ -259,54 +258,55 @@ Spark won’t treat 'NA' as a missing value unless we explicitly handle it.
 So if we're only checking for null, we might miss those 'fake nulls'.
 This is why we need to check each column for the presence of 'fake nulls'.
 °°°"""
-# |%%--%%| <xBkdZ6OuZ7|Zvi8VwC5o3>
+# |%%--%%| <Fx6ByHdnPj|PjPGq2ZxvB>
 
 # Define your list of fake/null-like strings
 fake_nulls = ['NA', 'N/A', 'na', 'n/a', 'null', 'None', ' N A', ' n a', ' N a']
 
-# Creating an empty list to collect the column names and NA counts
+# Create empty list to collect the column names and NA counts
 fake_null_counts = []
 
 # Loop through columns and count fake nulls in each
 for column in cleaned.columns:
-    count = cleaned.select(
-        Fsum(when(col(column).isin(fake_nulls), 1).otherwise(0)).alias("fake_null_count")
+    num_fake_nulls = cleaned.select(
+        F.sum(when(col(column).isin(fake_nulls), 1).otherwise(0)).alias("fake_null_count")
     ).collect()[0]["fake_null_count"]
 
-    if count > 0:
-        fake_null_counts.append((column, count))
+    if num_fake_nulls > 0:
+        fake_null_counts.append((column, num_fake_nulls))
 
-# Displaying
+# Display the result
 spark.createDataFrame(fake_null_counts, ["column", "fake_null_count"]).show(truncate=False)
 
-# |%%--%%| <Zvi8VwC5o3|LcdnYSsle5>
+
+# |%%--%%| <PjPGq2ZxvB|FxQWFGyIAc>
 r"""°°°
 In total we have 9,917 missing values (1.9% of the whole dataset).
 There are more cases of missing values that will be analysed later.
 We will also later on convert all these fake null values into null values that Spark
 can actually process (just like we did with the empty strings).
 °°°"""
-#|%%--%%| <LcdnYSsle5|dYiWl3e3kN>
+# |%%--%%| <FxQWFGyIAc|mjPmAX1D6U>
 
 # Checking for duplicates
 cleaned = cleaned.drop_duplicates()
 
 print(f'From our dataset, {cleaned.count()} / {original.count()} are distinct')
 
-# |%%--%%| <dYiWl3e3kN|vO0cDou6S3>
+# |%%--%%| <mjPmAX1D6U|v80nCQDi4T>
 r"""°°°
 ### Type casting the dataset
 
 We now inspect the schema and encoding of our features. We want to cast the data
 into a format that will be easier to process.
 °°°"""
-# |%%--%%| <vO0cDou6S3|PDk76TI1QF>
+# |%%--%%| <v80nCQDi4T|hAYfYS91Ml>
 r"""°°°
 From the schema and the first few observations, we see that we can benefit
 from casting to more python friendly instances, or categorical features that
 can be encoded as such.
 °°°"""
-#|%%--%%| <PDk76TI1QF|R8IbPQba9m>
+# |%%--%%| <hAYfYS91Ml|1XolEtjpnw>
 r"""°°°
 Some datasets use different string literals to mean missing data. These include
 'NA', 'No Review', 'N/A', NONE', 'NULL', 'MISSING', '', 0, etc.
@@ -314,7 +314,7 @@ Some datasets use different string literals to mean missing data. These include
 Let's harmonize by replacing such data with `None` and cast the coordinates
 decimal degrees to float.
 °°°"""
-# |%%--%%| <R8IbPQba9m|AH7Ufw7iCJ>
+# |%%--%%| <1XolEtjpnw|HY8O5B35Gh>
 
 # We notice that lon/lat represented here as decimal degrees should be numeric,
 # but they are typed as strings. This could mean that there are some "hard-coded" NAs
@@ -356,13 +356,14 @@ cleaned\
     .filter(col('lng').isNull() | col('lat').isNull())\
     .count()
 
-#|%%--%%| <AH7Ufw7iCJ|1O5VQfEk2x>
+# |%%--%%| <HY8O5B35Gh|Njn6irCxDv>
 r"""°°°
 The `Hotel_Address` seems to have no missing data. We do this by testing if the
 length of the string is less than a reasonable address size and if there is any
 `None` values
 °°°"""
-#|%%--%%| <1O5VQfEk2x|0ckasEA7Vs>
+# |%%--%%| <Njn6irCxDv|qd5ZgtWmHM>
+
 print('Hotel Addresses with None entries:')
 cleaned\
     .select('Hotel_Address', 'lng', 'lat')\
@@ -375,7 +376,7 @@ cleaned\
     .filter(length(col('Hotel_Address')) < 10 )\
     .count()
 
-#|%%--%%| <0ckasEA7Vs|ydraWNJwES>
+# |%%--%%| <qd5ZgtWmHM|pIgUIBKBkB>
 
 # According to the dataset, no positive / negative reviews are expressed as 'No Positive' / 'No Negative'
 cleaned = cleaned\
@@ -390,7 +391,7 @@ cleaned = cleaned\
 # Verify
 cleaned.select('Negative_Review', 'Positive_Review').show()
 
-#|%%--%%| <ydraWNJwES|zebcVMEPiT>
+# |%%--%%| <pIgUIBKBkB|fLu8Y4lvF9>
 r"""°°°
 We notice that some of our features are time related, but are typed as strings.
 
@@ -401,7 +402,7 @@ In particular,
 
 We will cast them to datetime and integers (after we confirm the units) respectively
 °°°"""
-#|%%--%%| <zebcVMEPiT|R82Hdq7GAZ>
+# |%%--%%| <fLu8Y4lvF9|Ab3ai4QnX1>
 
 cleaned = cleaned\
     .withColumn('Review_Date', to_date(col('Review_Date'), format='M/d/yyyy'))
@@ -411,7 +412,7 @@ cleaned\
     .select('Review_Date')\
     .show(5)
 
-#|%%--%%| <R82Hdq7GAZ|hgnKyLJ773>
+# |%%--%%| <Ab3ai4QnX1|QVg8lkrOjG>
 
 cleaned\
     .select('days_since_review')\
@@ -445,8 +446,7 @@ cleaned\
     .select('days_since_review')\
     .show(5)
 
-#|%%--%%| <hgnKyLJ773|e4JIPhLsTy>
-
+# |%%--%%| <QVg8lkrOjG|UxoaKRh3gJ>
 r"""°°°
 ### Geospatial
 
@@ -465,7 +465,8 @@ Please follow the instructions to start the server.
 
 TL;DR: `make nominatim/build && make nominatim/run`
 °°°"""
-# |%%--%%| <e4JIPhLsTy|QSsRyOLHlW>
+# |%%--%%| <UxoaKRh3gJ|2MTeKTnTdy>
+
 import psycopg2
 
 def get_connection():
@@ -505,7 +506,7 @@ else:
     # Load the processed data to save time
     pass
 
-#|%%--%%| <QSsRyOLHlW|Vx5UQvNCoW>
+# |%%--%%| <2MTeKTnTdy|OaraBoGS4h>
 
 # We source countries.csv from https://developers.google.com/public-data/docs/canonical/countries_csv
 countries = pd.read_csv('./data/countries.csv', delimiter='\t').set_index('ISO')
@@ -520,10 +521,14 @@ def extract_country(address):
 cleaned = cleaned\
     .withColumn('Country', extract_country('Hotel_Address'))
 
+# StringIndexer that safely handles nulls and unseen labels
+country_indexer = StringIndexer(inputCol='Country', outputCol='Country_Encoded') \
+                    .setHandleInvalid("keep")
 
-country_indexer = StringIndexer(inputCol='Country', outputCol='Country_Encoded')
+# Fit and transform
 cleaned = country_indexer.fit(cleaned).transform(cleaned)
-# This is time consuming, so persist
+
+# Cache the DataFrame in memory to speed up later operations
 cleaned.persist()
 
 cleaned\
@@ -533,7 +538,7 @@ cleaned\
 
 # TODO: Do we need cities as well?
 
-#|%%--%%| <Vx5UQvNCoW|R3aUHprpeK>
+# |%%--%%| <OaraBoGS4h|p5vYmmArvG>
 
 hotels = cleaned\
     .select('Hotel_Name', 'Hotel_Address', 'lng', 'lat', 'Average_Score', 'Total_Number_of_Reviews')\
@@ -566,7 +571,7 @@ for index, row in hotels_df.iterrows():
 m.save('./results/hotels.html')
 m
 
-#|%%--%%| <R3aUHprpeK|snsBn8aEaO>
+# |%%--%%| <p5vYmmArvG|n7hAkMqnXu>
 r"""°°°
 We notice that the hotels from our dataset come from 6 European cities:
 
@@ -577,7 +582,7 @@ We notice that the hotels from our dataset come from 6 European cities:
 - Milan, Paris
 - London, United Kingdom
 °°°"""
-#|%%--%%| <snsBn8aEaO|hZjMHnVLEW>
+# |%%--%%| <n7hAkMqnXu|9QmT8yxq4u>
 r"""°°°
 We saw before that our dataset consists of the join between "Hotel", "Reviewer" and "Review".
 It is natural to catagorize the "keys" of these tables where possible. In particular,
@@ -588,7 +593,7 @@ the natural categorizations are:
 
 Let's explore and encode them.
 °°°"""
-#|%%--%%| <hZjMHnVLEW|G2vTRebw98>
+# |%%--%%| <9QmT8yxq4u|AkQ0Ox1TrN>
 
 byReviewer = cleaned\
     .groupBy('Reviewer_Nationality')
@@ -601,10 +606,17 @@ byReviewer\
     .sort('count', ascending=False)\
     .show(n=10, truncate=False)
 
-nationality_indexer = StringIndexer(inputCol='Reviewer_Nationality', outputCol='Reviewer_Nationality_Encoded')
+# Handle nulls and unseen labels safely with StringIndexer
+nationality_indexer = StringIndexer(inputCol='Reviewer_Nationality', outputCol='Reviewer_Nationality_Encoded') \
+                        .setHandleInvalid("keep")
+
+# Apply the transformation
 cleaned = nationality_indexer.fit(cleaned).transform(cleaned)
+
+# Show sample output
 cleaned.select('Reviewer_Nationality', 'Reviewer_Nationality_Encoded').show(5)
-#|%%--%%| <G2vTRebw98|w573a28ASO>
+
+# |%%--%%| <AkQ0Ox1TrN|v7SW3Ynxib>
 r"""°°°
 We can see that from our dataset, the British, American and Australian tourists
 seem to leave the most reviews. This might be because in our original dataset
@@ -614,7 +626,7 @@ It's worth noting that this selection was either enforced by the review website
 or non-Engish reviews where filtered out before we received it, which appears
 to introduce a bias toards more affluent countries.
 °°°"""
-#|%%--%%| <w573a28ASO|82yXM1VHtf>
+# |%%--%%| <v7SW3Ynxib|sl86WChYtl>
 
 byHotel = cleaned\
     .groupBy('Hotel_Name')
@@ -627,19 +639,58 @@ byHotel\
     .sort('count', ascending=False)\
     .show(n=10, truncate=False)
 
-hotel_indexer = StringIndexer(inputCol='Hotel_Name', outputCol='Hotel_Name_Encoded')
+# Safely encode Hotel_Name even if nulls or unseen labels are present
+hotel_indexer = StringIndexer(inputCol='Hotel_Name', outputCol='Hotel_Name_Encoded') \
+                  .setHandleInvalid("keep")
 
+# Apply the transformation
 cleaned = hotel_indexer.fit(cleaned).transform(cleaned)
+
+# Show a few encoded hotel names
 cleaned.select('Hotel_Name', 'Hotel_Name_Encoded').show(5)
 
-#|%%--%%| <82yXM1VHtf|tSOGl1DoA4>
+# |%%--%%| <sl86WChYtl|0Q4IStyLWj>
 r"""°°°
 Summary of the cleaned dataset:
 - our data needs scaling (mean of `Average_Score` is 8.4 whereas mean of `Total_Number_of_Reviews` is 2744.7)
 - text features (reviews) appear to have mean and standard deviation implying that there are numeric characters present.
 - The count of `Reviewer_Nationality`, `Negative_Review`, `Positive_Review`, `lat` and `lng` is less than the total number of observations which indicate the presence on missing values in the dataset.
 °°°"""
-#|%%--%%| <tSOGl1DoA4|A7JTI39CRv>
+# |%%--%%| <0Q4IStyLWj|dS1WWraI0O>
+r"""°°°
+We decided that another potentially beneficial feature would be to create a numerical
+variable capturing the number of tags associated with each review.
+
+°°°"""
+# |%%--%%| <dS1WWraI0O|oDGRhkOdHG>
+
+cleaned.select("Tags").first()['Tags']
+# Display the first value in the 'Tags' column to understand its format.
+
+# |%%--%%| <oDGRhkOdHG|uOMclDnfyW>
+
+cleaned = cleaned.withColumn(
+    "Num_Tags",
+    size(split(regexp_replace(regexp_replace("Tags", r"^\[|\]$", ""), "'", ""), ", "))
+)
+
+# We create a new column 'Num_Tags' to count how many tags each row has.
+# We clean the 'Tags' by removing brackets and quotes, split by comma, and count the parts.
+
+# |%%--%%| <uOMclDnfyW|KUm4HIVfoT>
+
+cleaned = cleaned.withColumn(
+    "Num_Tags",
+    when(length("Tags") <= 2, 0).otherwise(
+        size(split(regexp_replace(regexp_replace("Tags", r"^\[|\]$", ""), "'", ""), ", "))
+    )
+)
+cleaned.select("Tags", "Num_Tags").show(10, truncate=False)
+
+# We display the first 10 rows with the original 'Tags' and the new 'Num_Tags' column to check if everything worked.
+
+
+# |%%--%%| <KUm4HIVfoT|SyzxrAi7I5>
 
 numerical_features = [
     'Additional_Number_of_Scoring',
@@ -648,13 +699,29 @@ numerical_features = [
     'Review_Total_Positive_Word_Counts',
     'Reviewer_Score',
     'Total_Number_of_Reviews',
-    'Total_Number_of_Reviews_Reviewer_Has_Given',
-]
-# At this point preprocessing has finished we save our data to parquet
-cleaned.write.parquet('./data/Hotel_Reviews.parquet')
+    'Num_Tags',
+    'Total_Number_of_Reviews_Reviewer_Has_Given']
+
+
+# |%%--%%| <SyzxrAi7I5|zEVV0DtGfh>
+
+
+numerical_features = [
+    'Additional_Number_of_Scoring',
+    'Average_Score',
+    'Review_Total_Negative_Word_Counts',
+    'Review_Total_Positive_Word_Counts',
+    'Reviewer_Score',
+    'Total_Number_of_Reviews',
+    'Total_Number_of_Reviews_Reviewer_Has_Given']
+
+#At this point preprocessing has finished we save our data to parquet
+#We write the DataFrame to Parquet and allow overwriting if the file exists
+cleaned.write.mode("overwrite").parquet('./data/Hotel_Reviews')  # no .parquet extension!
 cleaned.summary().show()
 
-# |%%--%%| <A7JTI39CRv|5R3d4gNbbg>
+
+# |%%--%%| <zEVV0DtGfh|Vf8E7ZPTZ3>
 r"""°°°
 ### Sampling
 
@@ -664,7 +731,7 @@ dataset would be computational expensive and time consuming.
 To overcome this, we sample from the original dataset. Based on our on going analysis,
 we aim to generate an as balanced subset as posible
 °°°"""
-#|%%--%%| <5R3d4gNbbg|LxF4mG1IId>
+# |%%--%%| <Vf8E7ZPTZ3|bXJ9TomOiB>
 
 # Taking a smaller chunk to make exploration more computational efficient
 
@@ -674,22 +741,22 @@ we aim to generate an as balanced subset as posible
 
 sample = cleaned.sample(fraction=0.1, withReplacement=False, seed=42)
 
-# |%%--%%| <LxF4mG1IId|XnhwhjuVqD>
+# |%%--%%| <bXJ9TomOiB|2SKeFmw17q>
 r"""°°°
 ### Feature Visualization
 °°°"""
-# |%%--%%| <XnhwhjuVqD|hZiIKJbPyv>
+# |%%--%%| <2SKeFmw17q|8s0ON3p77R>
 
 sample_pandas = sample.select(numerical_features).toPandas()
 
 print('[Sample] Numerical features description:')
 sample_pandas[numerical_features].describe()
 
-# |%%--%%| <hZiIKJbPyv|izGJVPKzx0>
+# |%%--%%| <8s0ON3p77R|oK3XVDh8L6>
 r"""°°°
 #### Checking for skewness in the target variable
 °°°"""
-# |%%--%%| <izGJVPKzx0|1Wyw8wzBd8>
+# |%%--%%| <oK3XVDh8L6|7CK6jtBJao>
 
 target_rdd = cleaned.select("Average_Score").rdd\
         .flatMap(lambda x: x)\
@@ -712,11 +779,13 @@ plt.gca().spines['right'].set_visible(False)
 
 plt.show()
 
-# |%%--%%| <1Wyw8wzBd8|Jj54OdyCV4>
+# |%%--%%| <7CK6jtBJao|gb2Ryho8N2>
+
+# |%%--%%| <gb2Ryho8N2|8iyvgUKxJb>
 
 cleaned.select(skewness("Average_Score")).show()
 
-# |%%--%%| <Jj54OdyCV4|bw3NG2DqU4>
+# |%%--%%| <8iyvgUKxJb|fO2FC94gOl>
 r"""°°°
 From the statistical summary we saw that the mean of the 'Average_Score' is close to 8.4
 and from the plot we can see that our target variable is slightly skewed to the left.
@@ -724,15 +793,15 @@ and from the plot we can see that our target variable is slightly skewed to the 
 This could potentially be due to the presence of an outlier around the value 6.3 - 6.4.
 To be more specific about the skewness we can use .skew().
 °°°"""
-# |%%--%%| <bw3NG2DqU4|wuMxIcSJmL>
+# |%%--%%| <fO2FC94gOl|9PD3B98QKz>
 
 cleaned.select(skewness("Average_Score")).show()
 
-#|%%--%%| <wuMxIcSJmL|7VqL9affQk>
+# |%%--%%| <9PD3B98QKz|rJJN3svbzP>
 r"""°°°
 #### Scatterplots
 °°°"""
-#|%%--%%| <7VqL9affQk|Rbatj96UNf>
+# |%%--%%| <rJJN3svbzP|1j0Mf2i6Uu>
 
 sns.set_style("white")
 sns.set_palette("coolwarm")
@@ -754,8 +823,7 @@ plt.tight_layout()
 # Show the plot
 plt.show()
 
-
-# |%%--%%| <Rbatj96UNf|O0VfzYyfFv>
+# |%%--%%| <1j0Mf2i6Uu|rHfNfIXvT8>
 r"""°°°
 We plotted some numeric features fitted using linear regression against the target variable `Average_Score`.
 
@@ -768,11 +836,11 @@ On the other side, we again expected that `Review_Total_Negative_Word_Counts` ne
 correlates to a venue's average score. Perphaps more suprising, the more reviews a venue has
 `Total_Number_of_Reviews`, the smaller its average score
 °°°"""
-# |%%--%%| <O0VfzYyfFv|o3sxAs5tEG>
+# |%%--%%| <rHfNfIXvT8|1lCJysBP8I>
 r"""°°°
 #### Visualizing correlation using a heatmap
 °°°"""
-# |%%--%%| <o3sxAs5tEG|vv03SuyONM>
+# |%%--%%| <1lCJysBP8I|nK8gAu0FV8>
 
 # An alternative way to visualize linear correlation
 
@@ -780,7 +848,7 @@ fig, ax = plt.subplots()
 
 sns.heatmap(sample_pandas[numerical_features].corr(method='pearson'), annot=True)
 
-#|%%--%%| <vv03SuyONM|3B9rANu4lX>
+# |%%--%%| <nK8gAu0FV8|PlyHeCaoS2>
 r"""°°°
 From the heatmap we can see that `Additional_Number_of_Scoring` and `Total_Number_of_Reviews`
 are highly linearly correlated since the correlation coefficient is equal to 0.82 (very close to 1).
@@ -792,22 +860,19 @@ As already studied in the previous pairplots `Average_Score` and `Reviewer_Score
 are linearly correlated even though their correlation is also pretty weak
 (correlation coefficient equals to 0.37).
 °°°"""
-# |%%--%%| <3B9rANu4lX|Qh2YO0wwL6>
-
+# |%%--%%| <PlyHeCaoS2|HaqZ0gIAJK>
 r"""°°°
 #### Density plots
 °°°"""
-# |%%--%%| <Qh2YO0wwL6|wH1pbt6Wmt>
+# |%%--%%| <HaqZ0gIAJK|5S3tH2AJJ6>
 
 print(sample_pandas.dtypes)
 
-# |%%--%%| <wH1pbt6Wmt|V209bhLulU>
-
-
+# |%%--%%| <5S3tH2AJJ6|M8y96e4BdK>
 
 def print_density_plot(feature):
     plt.figure(figsize=(6, 4))
-    sns.kdeplot(data=sample_pandas, x=col, fill=True, color='#3498db')
+    sns.kdeplot(data=sample_pandas, x=feature, fill=True, color='#3498db')
     plt.title(f'Density Plot of {feature}', fontsize=14, fontweight='bold')
     plt.xlabel(feature)
     plt.ylabel("Density")
@@ -819,7 +884,7 @@ def print_density_plot(feature):
 for f in numerical_features:
     print_density_plot(f)
 
-# |%%--%%| <V209bhLulU|rNGeLDAPUY>
+# |%%--%%| <M8y96e4BdK|x1eohlZien>
 r"""°°°
 From the density plots we can see that `Additional_Number_of_Scoring` is
 skewed to the right potentialy due to the presence of extremely high values (outliers).
@@ -831,12 +896,11 @@ The highest consentration of observations is observed around 12500.
 `Total_Number_of_Reviews_Reviewer_Has_Given` are also skewed to the right whereas
 `Reviewer_Score` is negatively skewed with most od its data points consentrating around 9.8.
 °°°"""
-# |%%--%%| <rNGeLDAPUY|ex1QxkWhAl>
+# |%%--%%| <x1eohlZien|WxtDfmx79F>
 r"""°°°
 #### Boxplots of features with the target variable
-
 °°°"""
-# |%%--%%| <ex1QxkWhAl|0hHe5PjCNV>
+# |%%--%%| <WxtDfmx79F|ZnEm1VvDNw>
 
 def print_boxplot(feature):
     plt.figure(figsize=(8, 4))
@@ -852,7 +916,7 @@ def print_boxplot(feature):
 print_boxplot('Review_Total_Negative_Word_Counts')
 print_boxplot('Review_Total_Positive_Word_Counts')
 
-# |%%--%%| <0hHe5PjCNV|FdYqg7Z7JF>
+# |%%--%%| <ZnEm1VvDNw|DnuHMhgPzw>
 r"""°°°
 `Review_Total_Negative_Word_Counts` by `Average_Score`:
  - There’s a slight downward trend: as `Average_Score` increases, the number of negative words tends to decrease.
@@ -864,17 +928,16 @@ r"""°°°
  - Positive trend: as `Average_Score` increases, the number of positive words also increases.
  - The median positive word count rises steadily from low to high scores.
  - Whiskers and outliers increase with higher scores — people who are more satisfied tend to say more and more positive things.
-
 °°°"""
-# |%%--%%| <FdYqg7Z7JF|MKpEWwNrx8>
+# |%%--%%| <DnuHMhgPzw|SC0jPq5rw0>
 r"""°°°
-### Natural Language Processing
+## Natural Language Processing
 °°°"""
-# |%%--%%| <MKpEWwNrx8|iDYGqhvTPU>
+# |%%--%%| <SC0jPq5rw0|F1TsqSUR1i>
 
 cleaned.select("Negative_Review", "Positive_Review").show(3, truncate=False)
 
-# |%%--%%| <iDYGqhvTPU|fqTGZYVu8T>
+# |%%--%%| <F1TsqSUR1i|PdhyFSq7Z4>
 
 # We create two new columns: 'Negative_Word_Count' and 'Positive_Word_Count'
 # If a review is null, we set the word count to 0
@@ -890,7 +953,7 @@ cleaned = cleaned.withColumn(
     .otherwise(size(split(trim(col("Positive_Review")), "\\s+")))
 )
 
-# |%%--%%| <fqTGZYVu8T|03dfxMyL5G>
+# |%%--%%| <PdhyFSq7Z4|dm895YhSA2>
 
 cleaned.select(
     "Negative_Review",
@@ -904,25 +967,24 @@ cleaned.select(
 # We select and display the review texts, the word counts we calculated, and the original total word count columns
 # This allows us to visually compare our new word counts with the existing 'Review_Total_Negative_Word_Counts' and 'Review_Total_Positive_Word_Counts'
 
-# |%%--%%| <03dfxMyL5G|HlAvfmDJjl>
+# |%%--%%| <dm895YhSA2|qRzaZ2TSSs>
 r"""°°°
 We created two new columns that count the actual number of words in each review.
 The existing columns from the original dataset include extra blanks, so their word
 counts may be inaccurate.
 °°°"""
-# |%%--%%| <HlAvfmDJjl|6MWKBgMnDf>
+# |%%--%%| <qRzaZ2TSSs|f5GTqNqOxm>
 r"""°°°
 ### Text pre-processing
 
 Before applying any advanced analytics methods to our data, in order to execute text analytics,
 we need to pre-process our text. Usually this step is consisted by the methods we shall see below
-
 °°°"""
-# |%%--%%| <6MWKBgMnDf|Z2lDYjgEmA>
+# |%%--%%| <f5GTqNqOxm|gjMWWPYdWG>
 r"""°°°
 #### 1.5.1 Tokenization
 °°°"""
-# |%%--%%| <Z2lDYjgEmA|ixYa14E7Jc>
+# |%%--%%| <gjMWWPYdWG|FkVnokKkcy>
 
 #Step 1:
 cleaned = cleaned.withColumn(
@@ -960,11 +1022,11 @@ cleaned.select("Negative_Review", "Negative_Tokens_Array", "Negative_Tokens_Coun
 # Prepare reviews: trim, replace nulls, split into words, countwords, and display
 # And for the column 'Tags' maybe we should use the regex tokenizer
 
-# |%%--%%| <ixYa14E7Jc|hzF72RvG36>
+# |%%--%%| <FkVnokKkcy|2jGIi2Ffwj>
 r"""°°°
 #### 1.5.2 Text Cleanup
 °°°"""
-# |%%--%%| <hzF72RvG36|rOhTFLpsx6>
+# |%%--%%| <2jGIi2Ffwj|sZFpIoNkbh>
 
 def clean_text(c):
   c = lower(c)
@@ -986,7 +1048,7 @@ clean_text_df = cleaned.select(
 clean_text_df.printSchema()
 clean_text_df.show(20)
 
-# |%%--%%| <rOhTFLpsx6|6IMSTqeyop>
+# |%%--%%| <sZFpIoNkbh|Q675ujyLhC>
 r"""°°°
 We observe that some reviews contain "no" and "negative" as tokens, but they are
 actually real negative reviews. For example:
@@ -999,7 +1061,7 @@ are no negative comments. For example:
 Based on this observation, we are going to clean the dataset by setting to null
 to the negative reviews where "no" and "negative" appear consecutively as tokens.
 °°°"""
-# |%%--%%| <6IMSTqeyop|J4zXoV1ALW>
+# |%%--%%| <Q675ujyLhC|wB4Z2CdJAs>
 
 # Define a UDF to check if the sequence "not at all" appears in the tokens
 @udf(BooleanType())
@@ -1013,7 +1075,7 @@ cleaned.filter(has_not_at_all_udf(col("Negative_Tokens_Array"))) \
        .select("Hotel_Name", "Negative_Review", "Negative_Tokens_Array") \
        .show(20, truncate=False)
 
-# |%%--%%| <J4zXoV1ALW|NTwnY36NIA>
+# |%%--%%| <wB4Z2CdJAs|FfjCh5GEyI>
 
 # Count reviews where tokens start with ["not", "at", "all"] and length is 3 or 4
 count_not_at_all = cleaned.filter(
@@ -1025,7 +1087,7 @@ count_not_at_all = cleaned.filter(
 
 print(f"Number of reviews starting with tokens ['not', 'at', 'all'] and size 3 or 4: {count_not_at_all}")
 
-# |%%--%%| <NTwnY36NIA|RYoaFWOdvK>
+# |%%--%%| <FfjCh5GEyI|d0ZoE2DkZ2>
 
 # Replace reviews that start with "not at all" and have exactly 3 or 4 tokens
 cleaned = cleaned.withColumn(
@@ -1057,7 +1119,7 @@ cleaned = cleaned.withColumn(
     ).otherwise(col("Negative_Tokens_Count"))
 )
 
-# |%%--%%| <RYoaFWOdvK|khPFjtcoY7>
+# |%%--%%| <d0ZoE2DkZ2|UULjtjepa8>
 
 # Rerunning the code to verify that the reviews mentioned above have now been replaced
 count_not_at_all = cleaned.filter(
@@ -1069,13 +1131,17 @@ count_not_at_all = cleaned.filter(
 
 print(f"Number of reviews starting with tokens ['not', 'at', 'all'] and size 3 or 4: {count_not_at_all}")
 
-# |%%--%%| <khPFjtcoY7|YdiyTkERDa>
+# |%%--%%| <UULjtjepa8|DJl4jsehVx>
 r"""°°°
-Here, we essentially want to consider only reviews where the negative review starts with "not at all". However, we restrict the number of tokens to exactly 3 or 4, in order to include only short reviews that consist solely of these tokens.
+Here, we essentially want to consider only reviews where the negative review starts
+with "not at all". However, we restrict the number of tokens to exactly 3 or 4,
+in order to include only short reviews that consist solely of these tokens.
 
-For example, reviews like "Club staff was not at all friendly at all in fact" should not be counted, because they have more than 4 tokens and "not at all" is not the entire review — and these are actually negative reviews.
+For example, reviews like "Club staff was not at all friendly at all in fact"
+should not be counted, because they have more than 4 tokens and "not at all" is
+not the entire review — and these are actually negative reviews.
 °°°"""
-# |%%--%%| <YdiyTkERDa|KS5u2BrNyk>
+# |%%--%%| <DJl4jsehVx|muHEaVdfje>
 
 # Find and count reviews where:
 # - Negative_Tokens_Array contains "nothing"
@@ -1087,11 +1153,13 @@ count_nothing_restricted = cleaned.filter(
 
 print(f"Number of reviews containing the token 'nothing' with 1 or 2 tokens: {count_nothing_restricted}")
 
-# |%%--%%| <KS5u2BrNyk|RxU5ulpI6K>
+# |%%--%%| <muHEaVdfje|6jy9LTiX3a>
 r"""°°°
-These reviews do not actually contain anything negative and should be considered as null. Their tokens should also be set to an empty array (zero tokens), so that the models we build later do not make decisions based on them.
+These reviews do not actually contain anything negative and should be considered as null.
+Their tokens should also be set to an empty array (zero tokens), so that the models we
+build later do not make decisions based on them.
 °°°"""
-# |%%--%%| <RxU5ulpI6K|d2YWszcrYv>
+# |%%--%%| <6jy9LTiX3a|KQaFpgSVhu>
 
 # Replace reviews containing only "nothing" (with 1 or 2 tokens) with null reviews and empty token arrays
 cleaned = cleaned.withColumn(
@@ -1114,7 +1182,7 @@ cleaned = cleaned.withColumn(
     ).otherwise(col("Negative_Tokens_Count"))
 )
 
-# |%%--%%| <d2YWszcrYv|hP6thnueHV>
+# |%%--%%| <KQaFpgSVhu|7GPwcT9Ojc>
 
 # Rerunning the code to verify that the reviews mentioned above have now been replaced
 
@@ -1125,7 +1193,7 @@ count_nothing_restricted = cleaned.filter(
 
 print(f"Number of reviews containing the token 'nothing' with 1 or 2 tokens: {count_nothing_restricted}")
 
-# |%%--%%| <hP6thnueHV|CKQMd5dXbY>
+# |%%--%%| <7GPwcT9Ojc|THPCmSkumx>
 
 # Define UDF to check if "no" is followed by "negative"
 @udf(BooleanType())
@@ -1139,17 +1207,19 @@ cleaned.filter(has_no_negative_pair_udf(col("Negative_Tokens_Array"))) \
     .select("Negative_Review", "Negative_Tokens_Array") \
     .show(20, truncate=False)
 
-# |%%--%%| <CKQMd5dXbY|3ntlodV1mD>
+# |%%--%%| <THPCmSkumx|NBTa43qMpw>
 
 no_negative_count = cleaned.filter(has_no_negative_pair_udf(col("Negative_Tokens_Array"))).count()
 
 print(f"Number of reviews with 'no' followed by 'negative': {no_negative_count}")
 
-# |%%--%%| <3ntlodV1mD|J6EULcLanI>
+# |%%--%%| <NBTa43qMpw|0bGRmiF3fh>
 r"""°°°
-Some hotels have non-negative reviews recorded as negative reviews, as their texts contain the consecutive words "no" and "negative." These reviews were not treated as nulls, leading to incorrect labeling and introducing bias into the dataset.
+Some hotels have non-negative reviews recorded as negative reviews, as their texts
+contain the consecutive words "no" and "negative." These reviews were not treated as
+nulls, leading to incorrect labeling and introducing bias into the dataset.
 °°°"""
-# |%%--%%| <J6EULcLanI|XovnntZw4y>
+# |%%--%%| <0bGRmiF3fh|ggm9Mp7wxW>
 
 # Set Negative_Review to null, Negative_Tokens_Array to empty array, and Negative_Tokens_Count to 0 if "no negative" appears
 cleaned = cleaned.withColumn(
@@ -1172,19 +1242,19 @@ cleaned = cleaned.withColumn(
     ).otherwise(col("Negative_Tokens_Count"))
 )
 
-# |%%--%%| <XovnntZw4y|2ceV5A8zVm>
+# |%%--%%| <ggm9Mp7wxW|pOhZk9JHyk>
 
-# Rerunning the code to check if the records we observed have been replaced
+# Re-running the code to check if the records we observed have been replaced
 
 no_negative_count = cleaned.filter(has_no_negative_pair_udf(col("Negative_Tokens_Array"))).count()
 
 print(f"Number of reviews with 'no' followed by 'negative': {no_negative_count}")
 
-# |%%--%%| <2ceV5A8zVm|sQJVLdOluf>
+# |%%--%%| <pOhZk9JHyk|AHSfrrrByQ>
 r"""°°°
 Now we are going to clean the positive reviews ( same process as above)
 °°°"""
-# |%%--%%| <sQJVLdOluf|d2rJfIdJgD>
+# |%%--%%| <AHSfrrrByQ|RgHtVDuzIa>
 
 # Define a UDF to check if "no" is immediately followed by "positive" in Positive_Tokens_Array
 @udf(BooleanType())
@@ -1202,7 +1272,7 @@ cleaned.filter(
 # We filter the dataset to find reviews where "no" is immediately followed by "positive" in the Positive_Tokens_Array
 # Then we select and display the original positive review text and its tokens for inspection
 
-# |%%--%%| <d2rJfIdJgD|OPD7O8MiEo>
+# |%%--%%| <RgHtVDuzIa|6Xdm0sEj3M>
 
 # Count positive reviews where tokens start with ["not", "at", "all"] and length is 3 or 4
 count_not_at_all_positive = cleaned.filter(
@@ -1216,7 +1286,7 @@ print(f"Number of positive reviews starting with tokens ['not', 'at', 'all'] and
 
 # We count the number of positive reviews that start with "not at all" and have exactly 3 or 4 tokens
 
-# |%%--%%| <OPD7O8MiEo|zj4zSLz9sa>
+# |%%--%%| <6Xdm0sEj3M|CWsCRGgdzp>
 
 # Find and count positive reviews where:
 # - Positive_Tokens_Array contains "nothing"
@@ -1230,11 +1300,11 @@ print(f"Number of positive reviews containing the token 'nothing' with 1 or 2 to
 
 # We count positive reviews that only say "nothing" and have exactly 1 or 2 tokens
 
-# |%%--%%| <zj4zSLz9sa|tX78VWAVkK>
+# |%%--%%| <CWsCRGgdzp|zl38RMRvVh>
 r"""°°°
 The number of positive reviews that do not correspond to actual positive reviews is smaller compared to the negative reviews we saw earlier. Therefore, we will only replace with missing values the observations that have no comment, and handle only those specific cases.(above code)
 °°°"""
-# |%%--%%| <tX78VWAVkK|eSfwgHXNJS>
+# |%%--%%| <zl38RMRvVh|EtoHqFZA9o>
 
 # Replace positive reviews where:
 # - Positive_Tokens_Array contains "nothing"
@@ -1261,7 +1331,7 @@ cleaned = cleaned.withColumn(
 
 # We replace positive reviews containing only "nothing" with null reviews and empty token arrays
 
-# |%%--%%| <eSfwgHXNJS|BbyQO62Sky>
+# |%%--%%| <EtoHqFZA9o|WKP2klNNhJ>
 
 #Rerruning the code
 count_nothing_restricted_positive = cleaned.filter(
@@ -1273,7 +1343,7 @@ print(f"Number of positive reviews containing the token 'nothing' with 1 or 2 to
 
 # We count positive reviews that only say "nothing" and have exactly 1 or 2 tokens
 
-# |%%--%%| <BbyQO62Sky|CA82Y2Sm22>
+# |%%--%%| <WKP2klNNhJ|eGMhQuj9XX>
 r"""°°°
 It is important to note that the previous step of cleaning some reviews,
 which were considered neither negative nor positive and contained the word "no,"
@@ -1281,17 +1351,17 @@ must take place at this part of the code.
 
 This is because, after removing the stop words, "no" would have been removed.
 °°°"""
-# |%%--%%| <CA82Y2Sm22|l2kfHyruOU>
+# |%%--%%| <eGMhQuj9XX|yBBXsekf4k>
 r"""°°°
 ### Removing Stopwords
 °°°"""
-# |%%--%%| <l2kfHyruOU|Cvznptvjmw>
+# |%%--%%| <yBBXsekf4k|hCQnW8t1Vc>
 r"""°°°
 Stopwords are words such as "and" and "the" that typically do not add value to the
 semantic meaning of a sentence. We typically want to remove these as a means to
 reduce the noise in our text datasets.
 °°°"""
-# |%%--%%| <Cvznptvjmw|EsXzqaSOMW>
+# |%%--%%| <hCQnW8t1Vc|0SZAabWQB6>
 
 # Step 4: Remove Stopwords
 stopwords_remover_neg = StopWordsRemover(inputCol="Negative_Tokens_Array", outputCol="Negative_Filtered_Tokens")
@@ -1315,19 +1385,18 @@ cleaned.select(
     "Positive_Review", "Positive_Filtered_Tokens", "Positive_Tokens_Count"
 ).show(5, truncate=False)
 
-# |%%--%%| <EsXzqaSOMW|cnsJdV7Nfm>
+# |%%--%%| <0SZAabWQB6|fyBCCn9n6u>
 r"""°°°
 ### 1.7 Lemmatizing
 °°°"""
-# |%%--%%| <cnsJdV7Nfm|BeIKNXPHau>
+# |%%--%%| <fyBCCn9n6u|Abw4PZrdkJ>
 
-#Install NLTK and download required resources
+# TODO: Say why we are using nltk
+
 nltk.download('wordnet')
 nltk.download('omw-1.4')
 
-# |%%--%%| <BeIKNXPHau|mZSAj6G6RC>
-
-#Import and define the lemmatizer + UDF:
+# |%%--%%| <Abw4PZrdkJ|wVF6cBFETz>
 
 lemmatizer = WordNetLemmatizer()
 
@@ -1338,28 +1407,28 @@ def lemmatize_tokens(tokens):
 # PySpark UDF
 lemmer_udf = udf(lemmatize_tokens, ArrayType(StringType()))
 
-# |%%--%%| <mZSAj6G6RC|5my9CO1kFM>
+# |%%--%%| <wVF6cBFETz|Z1gGkwq9nY>
 
-#Apply lemmatization to the filtered token columns:
+# Apply lemmatization to the filtered token columns:
 
 cleaned = cleaned.withColumn("Negative_Lemmatized", lemmer_udf(col("Negative_Filtered_Tokens")))
 cleaned = cleaned.withColumn("Positive_Lemmatized", lemmer_udf(col("Positive_Filtered_Tokens")))
 
-# |%%--%%| <5my9CO1kFM|FW8V7mvDcy>
+# |%%--%%| <Z1gGkwq9nY|BcYWDxj65p>
 
-#Re-count after lemmatization:
+# Re-count after lemmatization:
 cleaned = cleaned.withColumn("Negative_Lemma_Count", countTokens(col("Negative_Lemmatized")))
 cleaned = cleaned.withColumn("Positive_Lemma_Count", countTokens(col("Positive_Lemmatized")))
 
-# |%%--%%| <FW8V7mvDcy|k1SvN61XfL>
+# |%%--%%| <BcYWDxj65p|rw3RB3cKNH>
 
-#final columns
+# final columns
 cleaned.select(
     "Negative_Review", "Negative_Filtered_Tokens", "Negative_Lemmatized", "Negative_Lemma_Count",
     "Positive_Review", "Positive_Filtered_Tokens", "Positive_Lemmatized", "Positive_Lemma_Count"
 ).show(5, truncate=False)
 
-# |%%--%%| <k1SvN61XfL|LgECY1WVCo>
+# |%%--%%| <rw3RB3cKNH|8WoTy5DiSZ>
 
 # Count how many rows have nulls in Positive_Tokens_Count
 positive_nulls = cleaned.filter(col("Positive_Tokens_Count").isNull()).count()
@@ -1370,7 +1439,7 @@ negative_nulls = cleaned.filter(col("Negative_Tokens_Count").isNull()).count()
 print(f"Number of nulls in Positive_Tokens_Count: {positive_nulls}")
 print(f"Number of nulls in Negative_Tokens_Count: {negative_nulls}")
 
-# |%%--%%| <LgECY1WVCo|69xZ8As5D5>
+# |%%--%%| <8WoTy5DiSZ|xrgqKdTYh6>
 
 # Count nulls in Negative_Tokens_Count
 nulls_negative_tokens = cleaned.filter(col("Negative_Lemma_Count").isNull()).count()
@@ -1381,11 +1450,11 @@ nulls_positive_tokens = cleaned.filter(col("Positive_Lemma_Count").isNull()).cou
 print(f"Number of nulls in Negative_Tokens_Count: {nulls_negative_tokens}")
 print(f"Number of nulls in Positive_Tokens_Count: {nulls_positive_tokens}")
 
-# |%%--%%| <69xZ8As5D5|PzmfJfvq20>
+# |%%--%%| <xrgqKdTYh6|Oum9GCaeBe>
 r"""°°°
-#### Graph Analytic
+## Graph Analytic
 °°°"""
-# |%%--%%| <PzmfJfvq20|iQKrhFjeZw>
+# |%%--%%| <Oum9GCaeBe|IPUIpQDUii>
 
 df = cleaned.withColumn(
     "reviewer_id",
@@ -1425,11 +1494,11 @@ def plot_directed_graph(edge_list, weighted=True):
     plt.title("Reviewer–Hotel Bipartite Graph (Profile-Based Reviewer ID)")
     plt.show()
 
-# |%%--%%| <iQKrhFjeZw|AILa7ygb6S>
+# |%%--%%| <IPUIpQDUii|KiVyyGObA7>
 
 plot_directed_graph(edge_list, weighted=True)
 
-# |%%--%%| <AILa7ygb6S|lV6H9mn65K>
+# |%%--%%| <KiVyyGObA7|chQBgXa4ui>
 r"""°°°
 Bipartite Graph: Reviewers ↔ Hotels
 Nodes:
@@ -1442,24 +1511,24 @@ Use cases:
 - Identify highly connected hotels (most reviewed or diverse set of reviewers)
 - Detect reviewer communities or suspicious review patterns (e.g., cliques)
 °°°"""
-# |%%--%%| <lV6H9mn65K|uxL1SD0i7p>
+# |%%--%%| <chQBgXa4ui|5yOTHGymRT>
 
 gPlot = nx.DiGraph()
 
 for row in edge_list.select("src", "dst", "weight").collect():
     gPlot.add_edge(row["src"], row["dst"], weight=row["weight"])
 
-# |%%--%%| <uxL1SD0i7p|fNYmeHGlGS>
+# |%%--%%| <5yOTHGymRT|hPE4O0vJq3>
 r"""°°°
 The following code basically ranks a list of popular hotels by how many people reviewed them.
 °°°"""
-# |%%--%%| <fNYmeHGlGS|r8V2cpEEd6>
+# |%%--%%| <hPE4O0vJq3|990GfH67B3>
 
 hotel_degrees = [(n, gPlot.degree(n)) for n in gPlot.nodes if "Hotel" in n]
 top_hotels = sorted(hotel_degrees, key=lambda x: x[1], reverse=True)[:10]
 print("Top-reviewed hotels:", top_hotels)
 
-# |%%--%%| <r8V2cpEEd6|3HIKdO3OXV>
+# |%%--%%| <990GfH67B3|ubW6lYewpA>
 
 # This need too much time to run so maybe we can just remove it
 
@@ -1467,7 +1536,7 @@ print("Top-reviewed hotels:", top_hotels)
 #communities = community.greedy_modularity_communities(gPlot.to_undirected())
 #print("Found", len(communities), "communities")
 
-# |%%--%%| <3HIKdO3OXV|kZyyuXaIln>
+# |%%--%%| <ubW6lYewpA|FQGlfpfmmM>
 
 top_reviewers = sorted(
     [(n, gPlot.degree(n)) for n in gPlot.nodes if "Hotel" not in n],
@@ -1475,39 +1544,46 @@ top_reviewers = sorted(
 )[:10]
 print("Most active reviewer profiles:", top_reviewers)
 
-# |%%--%%| <kZyyuXaIln|ZHo73FF0I0>
+# |%%--%%| <FQGlfpfmmM|gQEJtJtSWb>
 r"""°°°
-#### Recommendation systems - Collaborative filtering
+## Recommendation systems - Collaborative filtering
 °°°"""
-# |%%--%%| <ZHo73FF0I0|bobv25JcoG>
+# |%%--%%| <gQEJtJtSWb|VAbRvdJM2C>
 
-# Step 1: Create a numeric version of reviewer_id and Hotel_Name
-reviewer_indexer = StringIndexer(inputCol="reviewer_id", outputCol="reviewer_id_index")
-hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index")
+from pyspark.ml.feature import StringIndexer
+from pyspark.ml.recommendation import ALS
+from pyspark.sql.functions import explode
 
-# Fit and transform both
+# we encode reviewer_id and Hotel_Name to numeric form so ALS can use them
+reviewer_indexer = StringIndexer(inputCol="reviewer_id", outputCol="reviewer_id_index") \
+                    .setHandleInvalid("keep")
+hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index") \
+                 .setHandleInvalid("keep")
+
+# we apply the transformations
 df = reviewer_indexer.fit(df).transform(df)
 df = hotel_indexer.fit(df).transform(df)
 
-# Step 2: Split the dataset
-(training_data, test_data) = df.randomSplit([0.8, 0.2], seed=42)
+# we split the data for training and testing
+training_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
 
-# Step 3: Build and train ALS model
+# we build the ALS model with some basic settings
 als = ALS(
     maxIter=10,
     regParam=0.01,
     userCol="reviewer_id_index",
     itemCol="hotel_id_index",
     ratingCol="Reviewer_Score",
-    coldStartStrategy="drop"
+    coldStartStrategy="drop"  # in case we get NaNs during predictions
 )
 
+# we train the model on the training data
 model = als.fit(training_data)
 
-# Step 4: Generate top 10 hotel recommendations for each reviewer
+# we generate top 10 hotel recommendations for each reviewer
 user_recs = model.recommendForAllUsers(10)
 
-# Step 5: Flatten nested recommendations into rows
+# we unpack the recommendation arrays into separate rows
 user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
 user_recs = user_recs.selectExpr(
     "reviewer_id_index",
@@ -1515,19 +1591,22 @@ user_recs = user_recs.selectExpr(
     "recommendation.rating as rating"
 )
 
+# we display the results
 user_recs.show(truncate=False)
 
-# |%%--%%| <bobv25JcoG|WQiAUAaTAM>
+
+# |%%--%%| <VAbRvdJM2C|ukctSe4eLo>
 r"""°°°
 #### RMSE Evaluation
 °°°"""
-# |%%--%%| <WQiAUAaTAM|ykMJT7653q>
+# |%%--%%| <ukctSe4eLo|HdKZi6peTR>
 
 predictions = model.transform(test_data)
 evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
 rmse = evaluator.evaluate(predictions)
 print("Root-mean-square error = " + str(rmse))
-#|%%--%%| <ykMJT7653q|zF6H9fHwAj>
+
+# |%%--%%| <HdKZi6peTR|IU0PXroUNz>
 r"""°°°
 ## Machine Learning
 
@@ -1553,14 +1632,14 @@ and the complexity of some models.
 **Therefore, cross-validation may be applied in future steps, particularly for
 models with longer training times or in order to further optimize performance.**
 °°°"""
-# |%%--%%| <zF6H9fHwAj|gWVGi1cWd7>
+# |%%--%%| <IU0PXroUNz|rqsdRAB5vc>
 r"""°°°
 Here we are creating a reduced version of the dataset by selecting the hotels
 that have the most reviews, until we reach around 50,000 total rows.
 
 First, we count how many reviews each hotel has and then we sort them in descending order.
 °°°"""
-# |%%--%%| <gWVGi1cWd7|sk2NrOIxk8>
+# |%%--%%| <rqsdRAB5vc|3imDaC4fKJ>
 r"""°°°
 The main reason we created this reduced dataset is that some machine learning algorithms
 take too much time to run on the full dataset. So, in order to speed up the process,
@@ -1569,18 +1648,29 @@ we decided to keep only the hotels with the most reviews until we reach around 5
 We know that selecting hotels based on the number of reviews is a convenient approach
 and not always realistic in practice, but it helps us develop and test our models
 more efficiently during the early stages.
-
 °°°"""
-# |%%--%%| <sk2NrOIxk8|JHqRvkmaaN>
+# |%%--%%| <3imDaC4fKJ|LaMoOFatBm>
 
+# Number of rows
+num_rows = cleaned.count()
+
+# Number of columns
+num_cols = len(cleaned.columns)
+
+print(f"The Spark DataFrame 'cleaned' has {num_rows} rows and {num_cols} columns.")
+
+# |%%--%%| <LaMoOFatBm|8gCj4NDX6l>
+
+# Group by hotel and count reviews
 hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
 
-# Step 2: Order hotels by number of reviews (descending)
+# Order by review count descending
 ordered_hotels = hotel_counts.orderBy("review_count", ascending=False)
 
-# Step 3: Collect hotel names and build cumulative total until ~50,000 rows
+# Collect hotel list to Python
 hotel_list = ordered_hotels.collect()
 
+# Build list of hotels until reaching ~50,000 reviews
 selected_hotels = []
 running_total = 0
 
@@ -1593,9 +1683,17 @@ for row in hotel_list:
     else:
         break
 
+# Filter Spark DataFrame for these top hotels
 clean_reduced_hotels_most_reviews = cleaned.filter(col("Hotel_Name").isin(selected_hotels))
 
-# |%%--%%| <JHqRvkmaaN|8Tv87DcyJ1>
+# |%%--%%| <8gCj4NDX6l|WfQT23le4J>
+
+num_rows = clean_reduced_hotels_most_reviews.count()
+num_cols = len(clean_reduced_hotels_most_reviews.columns)
+
+print(f"Filtered DataFrame has {num_rows} rows and {num_cols} columns.")
+
+# |%%--%%| <WfQT23le4J|VJHsPqhjH1>
 r"""°°°
 Great — you want to create a new dataset that, for each hotel, contains the average values of selected numerical columns from your full dataset cleaned.
 
@@ -1603,9 +1701,11 @@ Great — you want to create a new dataset that, for each hotel, contains the av
 Step-by-step goal:
 From cleaned, compute average values per hotel for the following columns:
 °°°"""
-# |%%--%%| <8Tv87DcyJ1|eqnNRlrm5u>
+# |%%--%%| <VJHsPqhjH1|H7lElUOPvP>
 
-# Step 1: Compute averages
+from pyspark.sql.functions import avg, count, col
+
+# Step 1: Define columns to compute averages on
 columns_to_average = [
     'Additional_Number_of_Scoring',
     'Average_Score',
@@ -1619,44 +1719,44 @@ columns_to_average = [
     'Negative_Lemma_Count'
 ]
 
-agg_exprs = [avg(col).alias(f"avg_{col}") for col in columns_to_average]
+# Step 2: Build aggregation expressions
+agg_exprs = [avg(col(column_name)).alias(f"avg_{column_name}") for column_name in columns_to_average]
 
+# Step 3: Group by hotel and compute averages
 hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
 
-# Step 2: Compute review counts per hotel
+# Step 4: Compute review counts per hotel
 hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
 
-# Step 3: Join the two DataFrames
+# Step 5: Join the two DataFrames on Hotel_Name
 hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
 
-# Step 4: Filter for hotels with more than 30 reviews
+# Step 6: Filter for hotels with more than 30 reviews
 hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
 
-# Step 5: (Optional) Show result
+# Step 7: Show final result
 hotel_avg_stats_filtered.show(truncate=False)
 
 
-# |%%--%%| <eqnNRlrm5u|1QpabtuUGF>
+# |%%--%%| <H7lElUOPvP|Z7RIuqMDf5>
 
 hotel_avg_stats_filtered.count()
 
-
-# |%%--%%| <1QpabtuUGF|w5tFqCymof>
+# |%%--%%| <Z7RIuqMDf5|BoBFDdWuyz>
 
 # Print hotels that have missing coordinates
 hotel_avg_stats_filtered.filter("avg_lat IS NULL OR avg_lng IS NULL").select("Hotel_Name", "avg_lat", "avg_lng").show(truncate=False)
 
-# |%%--%%| <w5tFqCymof|D9z76Okohb>
+# |%%--%%| <BoBFDdWuyz|CIA8rY4wOM>
 
 # Remove those hotels from the dataset
 hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
 
-# |%%--%%| <D9z76Okohb|RkTFskNW6W>
+# |%%--%%| <CIA8rY4wOM|4WfTgyBsQi>
 
 print(f"Final number of hotels (after removing those with missing lat/lng): {hotel_avg_stats_filtered.count()}")
 
-
-# |%%--%%| <RkTFskNW6W|2UOtJXDaL8>
+# |%%--%%| <4WfTgyBsQi|zvErLKhQ7Q>
 r"""°°°
 Here we build a regression model to predict the average hotel review score based
 on aggregated features derived from user reviews.
@@ -1669,9 +1769,13 @@ hotel and train a linear regression model to estimate the average review score.
 
 The dataset is split into training and testing sets, and we evaluate the model's
 performance using RMSE and R² metrics to assess prediction accuracy and fit quality.
+°°°"""
+# |%%--%%| <zvErLKhQ7Q|pTdIftyoNj>
+r"""°°°
+The below code has to do with model
 
 °°°"""
-# |%%--%%| <2UOtJXDaL8|6NYnx82RuP>
+# |%%--%%| <pTdIftyoNj|3Z5sOUKiog>
 
 # Step 1: Compute averages per hotel
 columns_to_average = [
@@ -1737,8 +1841,7 @@ r2 = evaluator_r2.evaluate(predictions)
 print(f"RMSE on test set: {rmse}")
 print(f"R² on test set: {r2}")
 
-
-# |%%--%%| <6NYnx82RuP|CHvWPBfEMR>
+# |%%--%%| <3Z5sOUKiog|m9dNiI3CYg>
 r"""°°°
 We can see that the linear regression model achieved an RMSE of approximately 0.38,
 indicating that, on average, the predicted hotel scores deviate from the actual score
@@ -1752,39 +1855,37 @@ and could potentially be improved by using more complex models (like Random Fore
 or Gradient Boosting) or by incorporating richer features such as text sentiment
 from reviews or location-based attributes.
 °°°"""
-# |%%--%%| <CHvWPBfEMR|5wjsTjsDoT>
+# |%%--%%| <m9dNiI3CYg|ClJqCyXkeW>
 
-from pyspark.ml.regression import LinearRegression, RandomForestRegressor, GBTRegressor
-from pyspark.ml.evaluation import RegressionEvaluator
-
-# Step 1: Define models
+# first we define the models we want to try out, all using the same features and label
 models = {
     "Linear Regression": LinearRegression(featuresCol="features", labelCol="label"),
     "Random Forest": RandomForestRegressor(featuresCol="features", labelCol="label", numTrees=100),
     "Gradient Boosted Trees": GBTRegressor(featuresCol="features", labelCol="label", maxIter=100)
 }
 
-# Step 2: Train, predict, evaluate
+# now we set up the evaluators — one for RMSE and one for R²
 evaluator_rmse = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
 evaluator_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
 
 results = []
 
+# here we loop through the models, fit them, predict, and evaluate
 for name, model in models.items():
-    fitted = model.fit(train_data)
-    preds = fitted.transform(test_data)
+    fitted = model.fit(train_data)               # we train the model
+    preds = fitted.transform(test_data)          # then make predictions on the test set
 
-    rmse = evaluator_rmse.evaluate(preds)
-    r2 = evaluator_r2.evaluate(preds)
+    rmse = evaluator_rmse.evaluate(preds)        # calculate RMSE
+    r2 = evaluator_r2.evaluate(preds)            # calculate R²
 
-    results.append((name, rmse, r2))
+    results.append((name, rmse, r2))             # save the results
 
-# Step 3: Print results
+# finally we print out the results in a clean format
 for name, rmse, r2 in results:
     print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
 
 
-# |%%--%%| <5wjsTjsDoT|EXHVgEgs4E>
+# |%%--%%| <ClJqCyXkeW|xSz2CoAVG9>
 r"""°°°
 Linear Regression performs best among the three models — it has the lowest RMSE (0.3766)
 and the highest R² (0.4892). This suggests that, despite being a simpler model,
@@ -1800,27 +1901,41 @@ good at exploiting.
 This implies your data relationships are relatively linear, or at least
 well-approximated by a linear function at this aggregation level.
 °°°"""
-# |%%--%%| <EXHVgEgs4E|hLAiSK08Mh>
+# |%%--%%| <xSz2CoAVG9|G6BwWnXd2Z>
+r"""°°°
+We saved the predictions only for the last model (Gradient Boosted Trees)
+and plotted actual vs. predicted values to visually evaluate its performance.
+The red dashed line shows where perfect predictions would fall.
 
+°°°"""
+# |%%--%%| <G6BwWnXd2Z|AnhMxJ9ZKD>
+
+# we convert the predictions and labels to a pandas DataFrame so we can plot them easily
 pdf = preds.select("prediction", "label").toPandas()
+
+# we make a scatter plot of actual vs. predicted values
 plt.scatter(pdf["label"], pdf["prediction"], alpha=0.3)
-plt.plot([pdf["label"].min(), pdf["label"].max()], [pdf["label"].min(), pdf["label"].max()], color='red')
+
+# we add a red line to show the ideal case where predicted = actual
+plt.plot([pdf["label"].min(), pdf["label"].max()],
+         [pdf["label"].min(), pdf["label"].max()],
+         color='red')
+
+# basic plot labels and title
 plt.xlabel("Actual")
 plt.ylabel("Predicted")
 plt.title(f"{name} - Actual vs. Predicted")
+
+# show the plot
 plt.show()
 
-
-# |%%--%%| <hLAiSK08Mh|lBJNeEsFhX>
+# |%%--%%| <AnhMxJ9ZKD|2TTB16kUvs>
 
 if hasattr(fitted, "featureImportances"):
     importances = fitted.featureImportances
     print(f"{name} feature importances:\n{importances}")
 
-# |%%--%%| <lBJNeEsFhX|W4lWEQGhlS>
-
-# Assume 'feature_cols' is your list of feature column names
-feature_cols = [...]  # <- replace with your actual feature names
+# |%%--%%| <2TTB16kUvs|c87jEHyoOL>
 
 for name, model in models.items():
     fitted = model.fit(train_data)
@@ -1840,106 +1955,18 @@ for name, model in models.items():
         for feat, score in zip(feature_cols, importance_list):
             print(f"  {feat}: {score:.4f}")
 
-# |%%--%%| <W4lWEQGhlS|sTqfuRsZZ2>
+# |%%--%%| <c87jEHyoOL|D5gaXvQ8M3>
 r"""°°°
 ### Model 3
 °°°"""
-# |%%--%%| <sTqfuRsZZ2|LAxVurgFh3>
-
-clean_reduced_hotels_most_reviews.filter(
-    (col("lat").isNull()) | (col("lng").isNull())
-).select("Hotel_Name", "lat", "lng").show(truncate=False)
-
-# |%%--%%| <LAxVurgFh3|f9m3Dy14SP>
-
-hotel_locations = clean_reduced_hotels_most_reviews \
-    .select("Hotel_Name", "lat", "lng") \
-    .dropna(subset=["lat", "lng"]) \
-    .dropDuplicates(["Hotel_Name"])
-
-# |%%--%%| <f9m3Dy14SP|YyGDi7y3Kp>
-
-hotel_locations.count()
-
-# |%%--%%| <YyGDi7y3Kp|AQN1w2nZ6M>
-
-hotel_coords = hotel_locations.select("Hotel_Name", "lat", "lng").collect()
-
-# |%%--%%| <AQN1w2nZ6M|xySrlD9GvB>
-
-from geopy.geocoders import Nominatim
-from time import sleep
-
-geolocator = Nominatim(user_agent="geoapi")
-
-results = []
-for row in hotel_coords:
-    hotel_name, lat, lng = row["Hotel_Name"], row["lat"], row["lng"]
-    try:
-        location = geolocator.reverse((lat, lng), exactly_one=True)
-        address = location.raw["address"]
-        city = address.get("city", address.get("town", address.get("village", "")))
-        country = address.get("country", "")
-        results.append((hotel_name, city, country))
-    except Exception as e:
-        results.append((hotel_name, None, None))
-    sleep(1)  # avoid rate limiting
-
-# Convert results to a DataFrame or export
-
-
-# |%%--%%| <xySrlD9GvB|H9jgRBngDP>
-
-for r in results:
-    print(r)
-
-
-# |%%--%%| <H9jgRBngDP|CvlScRDSI5>
-
-import pandas as pd
-
-geo_df = pd.DataFrame(results, columns=["Hotel_Name", "City", "Country"])
-print(geo_df.head())
-
-# |%%--%%| <CvlScRDSI5|csYybb9Fw1>
-r"""°°°
-We attempted to use the same code in order to retrieve the country and city
-information for all hotels.
-
-However, we encountered issues due to limitations of the API service (Nominatim).
-Despite trying to adjust the timeout settings and add delays between requests,
-the process proved to be very time-consuming.
-
-For this reason, we applied the method only to a sample of 17 hotels.
-
-°°°"""
-# |%%--%%| <csYybb9Fw1|xATckEweYf>
-
-clean_reduced_hotels_most_reviews.columns
-
-
-# |%%--%%| <xATckEweYf|rWV690OQcU>
-
-from pyspark.sql.functions import size
-
-empty_counts = clean_reduced_hotels_most_reviews.select(
-    (size(col("Negative_Lemmatized")) == 0).alias("Negative_Lemmatized_empty"),
-    (size(col("Positive_Lemmatized")) == 0).alias("Positive_Lemmatized_empty")
-).groupBy().sum()
-
-empty_counts.show()
-
-# |%%--%%| <rWV690OQcU|aFPmARxtkN>
-
-from pyspark.sql.functions import col, sum
+# |%%--%%| <D5gaXvQ8M3|YONlYHN1nl>
 
 clean_reduced_hotels_most_reviews.select(
-    sum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
-    sum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
+    Fsum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
+    Fsum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
 ).show()
 
-
-# |%%--%%| <aFPmARxtkN|mzSFBwzT9z>
+# |%%--%%| <YONlYHN1nl|n70Kqr5W3f>
 
 null_or_empty = clean_reduced_hotels_most_reviews.filter(
     col("Negative_Lemmatized").isNull() | (size(col("Negative_Lemmatized")) == 0) |
@@ -1948,8 +1975,7 @@ null_or_empty = clean_reduced_hotels_most_reviews.filter(
 
 print(f"Rows with null or empty lemmatized tokens: {null_or_empty.count()}")
 
-
-# |%%--%%| <mzSFBwzT9z|OQbY7KqkgW>
+# |%%--%%| <n70Kqr5W3f|tDv252WCnZ>
 
 # Count rows where Negative_Lemmatized is an empty array
 empty_negative = clean_reduced_hotels_most_reviews.filter(size(col("Negative_Lemmatized")) == 0).count()
@@ -1965,11 +1991,7 @@ both_empty = clean_reduced_hotels_most_reviews.filter(
 ).count()
 print(f"Rows where BOTH are empty: {both_empty}")
 
-
-# |%%--%%| <OQbY7KqkgW|Jm5S6Rcz5i>
-clean_reduced_hotels_most_reviews.show()
-
-# |%%--%%| <Jm5S6Rcz5i|QhRDemnwk9>
+# |%%--%%| <tDv252WCnZ|SM0g9e6CTn>
 r"""°°°
 In this approach, we aimed to separate the positive and negative components of each
 hotel review so they could be treated as independent training samples.
@@ -1986,62 +2008,67 @@ and IDF for feature extraction and training a logistic regression model.
 Finally, we evaluated the model’s performance using the AUC metric to assess its
 ability to distinguish between positive and negative sentiment.
 °°°"""
-# |%%--%%| <QhRDemnwk9|4ZqUBJva0o>
+# |%%--%%| <SM0g9e6CTn|yGsu1hj3qw>
 
-# Filter rows that have non-empty lemmatized arrays
+# we keep only the rows where we actually have some lemmatized tokens (positive or negative)
 df = clean_reduced_hotels_most_reviews.filter(
     (size(col("Positive_Lemmatized")) > 0) | (size(col("Negative_Lemmatized")) > 0)
 )
 
-# Create one DataFrame for positive reviews
+# here we build a new DataFrame for the positive reviews
+# we also assign label = 1 to mark them as positive
 positive_df = df.filter(size(col("Positive_Lemmatized")) > 0) \
     .withColumn("lemmatized_tokens", col("Positive_Lemmatized")) \
     .withColumn("label", lit(1)) \
     .select("lemmatized_tokens", "label")
 
-# Create one DataFrame for negative reviews
+# same logic here for the negative reviews, just with label = 0
 negative_df = df.filter(size(col("Negative_Lemmatized")) > 0) \
     .withColumn("lemmatized_tokens", col("Negative_Lemmatized")) \
     .withColumn("label", lit(0)) \
     .select("lemmatized_tokens", "label")
 
-# Combine both
+# we merge both datasets into one
 df = positive_df.union(negative_df)
 
-# Select only the necessary columns for training
+# we keep only the useful columns for model training
 df = df.select("lemmatized_tokens", "label")
 
-# Define the ML pipeline stages
+# now we set up our pipeline:
+# 1. HashingTF turns tokens into a fixed-length vector
+# 2. IDF scales the features
+# 3. Logistic Regression is our classifier
 hashing_tf = HashingTF(inputCol="lemmatized_tokens", outputCol="raw_features", numFeatures=10000)
 idf = IDF(inputCol="raw_features", outputCol="features")
 lr = LogisticRegression(featuresCol="features", labelCol="label")
 
 pipeline = Pipeline(stages=[hashing_tf, idf, lr])
 
-# Split into training and test sets
+# we split the data into train and test sets
 train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
 
-# Train the model
+# now we train the whole pipeline
 model = pipeline.fit(train_data)
 
-# Make predictions and evaluate
+# make predictions on the test set
 predictions = model.transform(test_data)
 
+# evaluate the performance using AUC
 evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
 auc = evaluator.evaluate(predictions)
 
+# print the AUC to see how well we did
 print(f"AUC on test set: {auc}")
 
-# Show predictions
+# just take a quick look at a few predictions
 predictions.select("lemmatized_tokens", "label", "prediction").show(5, truncate=False)
 
-# |%%--%%| <4ZqUBJva0o|g88tERS2Fk>
+
+# |%%--%%| <yGsu1hj3qw|MqHNgbibMm>
 
 df.groupBy("label").count().show()
 
-# |%%--%%| <g88tERS2Fk|Pi1t2FA3gK>
-
-# TODO: This looks like a duplicate
+# |%%--%%| <MqHNgbibMm|aqjwVB9Jgz>
 
 # Prepare positive and negative samples
 
@@ -2084,7 +2111,7 @@ print(f"AUC on test set: {auc}")
 # Show some predictions
 predictions.select("text", "label", "prediction").show(5, truncate=False)
 
-# |%%--%%| <Pi1t2FA3gK|mR2ScC4orh>
+# |%%--%%| <aqjwVB9Jgz|9Uz0Pf2XHz>
 
 # TODO: Why are we adding new text? Justify and maybe add to new section
 
@@ -2099,13 +2126,11 @@ new_df = spark.createDataFrame([(t,) for t in new_texts], ["text"])
 # Predict
 model.transform(new_df).select("text", "prediction").show(truncate=False)
 
-
-# |%%--%%| <mR2ScC4orh|YIGu2QAV6w>
+# |%%--%%| <9Uz0Pf2XHz|Pv3hc0wWvA>
 
 df.groupBy("label").count().show()
 
-
-# |%%--%%| <YIGu2QAV6w|V2m2sPHRPt>
+# |%%--%%| <Pv3hc0wWvA|VbzISKUhvt>
 
 # Get predictions and actual labels
 results = predictions.select("label", "prediction")
@@ -2122,13 +2147,13 @@ print(f"True Negatives:  {tn}")
 print(f"False Positives: {fp}")
 print(f"False Negatives: {fn}")
 
-# |%%--%%| <V2m2sPHRPt|QzuNyoskHe>
+# |%%--%%| <VbzISKUhvt|g8uWWcQwG4>
 
 for metric in ["accuracy", "f1", "weightedPrecision", "weightedRecall"]:
     evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName=metric)
     print(f"{metric.capitalize()}: {evaluator.evaluate(predictions):.4f}")
 
-# |%%--%%| <QzuNyoskHe|JKumUXvhZW>
+# |%%--%%| <g8uWWcQwG4|VM26DAxIIO>
 
 new_texts = [
     "The room was clean and quiet. Excellent service!",
@@ -2148,7 +2173,7 @@ predictions = model.transform(new_df)
 # Show predicted label and probability
 predictions.select("text", "prediction", "probability").show(truncate=False)
 
-# |%%--%%| <JKumUXvhZW|qIC9fuCYlt>
+# |%%--%%| <VM26DAxIIO|o96ef0YU4z>
 r"""°°°
  Adding bigrams (n-grams) to capture short phrases like:
 "no towels"
@@ -2158,10 +2183,8 @@ r"""°°°
 "not clean"
 
 These phrases are more meaningful than isolated words like "no" or "towels" on their own.
-
-
 °°°"""
-# |%%--%%| <qIC9fuCYlt|hTySuUS0K2>
+# |%%--%%| <o96ef0YU4z|AB9InswNdv>
 
 # Prepare positive and negative samples
 
@@ -2208,7 +2231,7 @@ predictions.select("text", "label", "prediction", "probability").show(5, truncat
 # Confusion matrix (basic form)
 predictions.groupBy("label", "prediction").count().orderBy("label", "prediction").show()
 
-# |%%--%%| <hTySuUS0K2|Rincg7DGyl>
+# |%%--%%| <AB9InswNdv|8OMjt0ZQ4B>
 
 # New review examples
 new_texts = [
@@ -2226,21 +2249,20 @@ new_df = spark.createDataFrame([(t,) for t in new_texts], ["text"])
 predicted_new = model.transform(new_df)
 predicted_new.select("text", "prediction", "probability").show(truncate=False)
 
-# |%%--%%| <Rincg7DGyl|l0OqeSn4oX>
+# |%%--%%| <8OMjt0ZQ4B|17zBQx2G7x>
 
 df.groupBy("label").count().orderBy("label").show()
 
-
-# |%%--%%| <l0OqeSn4oX|NsqAR92lLq>
+# |%%--%%| <17zBQx2G7x|ebP0fb0s7B>
 r"""°°°
 Option 1: Combine unigrams + bigrams
 This helps the model learn both:
 
 Individual words like "clean", "rude", "broken"
 
-Phrases like "no towels", "was broken"
+Phrases like "no towels", "was broken
 °°°"""
-# |%%--%%| <NsqAR92lLq|oJR7sfPLSq>
+# |%%--%%| <ebP0fb0s7B|xnyKLz1bcD>
 
 # Tokenize and remove stopwords
 tokenizer = Tokenizer(inputCol="text", outputCol="tokens")
@@ -2272,7 +2294,7 @@ pipeline = Pipeline(stages=[
     lr
 ])
 
-# |%%--%%| <oJR7sfPLSq|CgfRc5fyD2>
+# |%%--%%| <xnyKLz1bcD|j8qSbr4QqU>
 
 train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
 model = pipeline.fit(train_data)
@@ -2283,11 +2305,11 @@ evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="ra
 auc = evaluator.evaluate(predictions)
 print(f"AUC (Unigrams + Bigrams): {auc}")
 
-# |%%--%%| <CgfRc5fyD2|Gi2xCvrrnM>
+# |%%--%%| <j8qSbr4QqU|g1SHCmFvhf>
 
 df.groupBy("label").count().show()
 
-# |%%--%%| <Gi2xCvrrnM|alKv12MNAc>
+# |%%--%%| <g1SHCmFvhf|lM7Qyg2XVV>
 
 evaluator_f1 = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="f1")
 evaluator_precision = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="precisionByLabel")
@@ -2301,28 +2323,32 @@ print(f"F1 Score: {f1}")
 print(f"Precision: {precision}")
 print(f"Recall: {recall}")
 
-# |%%--%%| <alKv12MNAc|3uuJOizROk>
+# |%%--%%| <lM7Qyg2XVV|Ji4G61nylx>
 
-from IPython import display
+from IPython.display import Markdown, display
 
+# we create a markdown table with our evaluation results and some quick notes
 evaluation_summary = """
 ### Evaluation Summary
 
-| Metric     | Value  | Interpretation                                              |
-|------------|--------|-------------------------------------------------------------|
-| **AUC**    | 0.973  | Excellent. Your model ranks positive > negative reliably.   |
-| **F1 Score** | 0.922 | Strong overall balance between precision and recall.       |
-| **Precision** | 0.904 | 90.4% of predicted positives were correct (low false positives). |
-| **Recall** | 0.915  | 91.5% of actual positives were detected (low false negatives). |
+| Metric       | Value  | Interpretation                                              |
+|--------------|--------|-------------------------------------------------------------|
+| **AUC**      | 0.973  | the model ranks positives above negatives really well       |
+| **F1 Score** | 0.922  | pretty balanced — good tradeoff between precision and recall |
+| **Precision**| 0.904  | most of the predicted positives were actually correct        |
+| **Recall**   | 0.915  | we managed to catch most of the true positives               |
 """
 
-display(display.Markdown(evaluation_summary))
+# we display the table in markdown format
+display(Markdown(evaluation_summary))
 
-# |%%--%%| <3uuJOizROk|mE9kiS7tJU>
+
+
+# |%%--%%| <Ji4G61nylx|fFaPXfITTh>
 r"""°°°
 Confusion Matrix
 °°°"""
-# |%%--%%| <mE9kiS7tJU|bHLTmVvKU5>
+# |%%--%%| <fFaPXfITTh|Gf7nLqfHDv>
 
 # Assuming `predictions` is the DataFrame after model.transform()
 
@@ -2332,8 +2358,7 @@ predictions.select("label", "prediction") \
     .orderBy("label", "prediction") \
     .show()
 
-
-# |%%--%%| <bHLTmVvKU5|grVPsgG6os>
+# |%%--%%| <Gf7nLqfHDv|shIpnpnzQ6>
 
 # Example new reviews to classify
 new_texts = [
@@ -2354,27 +2379,27 @@ new_predictions = model.transform(new_df)
 # Show predicted label and probability
 new_predictions.select("text", "prediction", "probability").show(truncate=False)
 
-# |%%--%%| <grVPsgG6os|4tVQrJJkbG>
+# |%%--%%| <shIpnpnzQ6|nbVznwKLeF>
 r"""°°°
 ### MODEL 4
 °°°"""
-# |%%--%%| <4tVQrJJkbG|ZI24XwjvJH>
+# |%%--%%| <nbVznwKLeF|3uiZzflio8>
 
 hotel_avg_stats_filtered.show()
 
-# |%%--%%| <ZI24XwjvJH|Ajjt0gBVk4>
+# |%%--%%| <3uiZzflio8|kmMV39A17O>
 
 # Sort hotels by average number of reviews in ascending order
 hotel_avg_stats_filtered.orderBy("avg_Total_Number_of_Reviews", ascending=True).show()
 
-# |%%--%%| <Ajjt0gBVk4|lopB5kVTUH>
+# |%%--%%| <kmMV39A17O|4kMGaM1bVt>
 r"""°°°
 Here we create a new column called `star_rating`, where we convert the average score
 of each hotel into a 1–5 star scale.
 
 This helps us simplify the target variable for classification tasks.
 °°°"""
-# |%%--%%| <lopB5kVTUH|JXPTCt0M6q>
+# |%%--%%| <4kMGaM1bVt|Jm1luvcJYR>
 
 # Here we add a new column that assigns a star rating (1 to 5) based on the avg_Average_Score of each hotel
 hotel_with_stars = hotel_avg_stats_filtered.withColumn(
@@ -2386,7 +2411,7 @@ hotel_with_stars = hotel_avg_stats_filtered.withColumn(
     .otherwise(1)
 )
 
-# |%%--%%| <JXPTCt0M6q|s46x0T0xAm>
+# |%%--%%| <Jm1luvcJYR|qt4FN93UVX>
 
 feature_columns = [
     "avg_Additional_Number_of_Scoring",
@@ -2401,7 +2426,7 @@ feature_columns = [
     "review_count"
 ]
 
-# |%%--%%| <s46x0T0xAm|Pgtnhh6luM>
+# |%%--%%| <qt4FN93UVX|TSDsNReTFD>
 
 # Split the data into training and test sets
 train_data, test_data = hotel_with_stars.randomSplit([0.8, 0.2], seed=42)
@@ -2421,19 +2446,18 @@ model = pipeline.fit(train_data)
 # Make predictions on test data
 predictions = model.transform(test_data)
 
-
-# |%%--%%| <Pgtnhh6luM|lCPAAKMTmI>
+# |%%--%%| <TSDsNReTFD|epEWMt0BO1>
 
 # Show actual vs predicted star ratings side by side
 predictions.select("Hotel_Name", "avg_Average_Score", "star_rating", "prediction").show()
 
-# |%%--%%| <lCPAAKMTmI|FWNZ4gRXAS>
+# |%%--%%| <epEWMt0BO1|KJgUdXsRzP>
 
 # Filter and show misclassified hotels
 misclassified = predictions.filter(col("star_rating") != col("prediction"))
 misclassified.select("Hotel_Name", "avg_Average_Score", "star_rating", "prediction").show()
 
-# |%%--%%| <FWNZ4gRXAS|cycRq5ilkP>
+# |%%--%%| <KJgUdXsRzP|AdmvRauLst>
 
 # Accuracy
 evaluator_acc = MulticlassClassificationEvaluator(
@@ -2450,23 +2474,23 @@ f1 = evaluator_f1.evaluate(predictions)
 print(f"Accuracy: {accuracy:.4f}")
 print(f"F1 Score: {f1:.4f}")
 
-# |%%--%%| <cycRq5ilkP|vX7WfvgiQ0>
+# |%%--%%| <AdmvRauLst|L8aYnmJVDm>
 
 # Confusion matrix (counts of actual vs predicted)
 confusion_matrix = predictions.groupBy("star_rating", "prediction").count().orderBy("star_rating", "prediction")
 confusion_matrix.show()
 
-# |%%--%%| <vX7WfvgiQ0|cCVlT0E6so>
+# |%%--%%| <L8aYnmJVDm|97ewzj8pz7>
 
 # Group by actual and predicted values and convert to pandas
 confusion_pd = predictions.groupBy("star_rating", "prediction").count().toPandas()
 
-# |%%--%%| <cCVlT0E6so|GiaPLdzzM0>
+# |%%--%%| <97ewzj8pz7|BxTpdx5mRE>
 
 # Pivot the confusion matrix for plotting
 conf_matrix = confusion_pd.pivot(index="star_rating", columns="prediction", values="count").fillna(0)
 
-# |%%--%%| <GiaPLdzzM0|0OXjiDUbJq>
+# |%%--%%| <BxTpdx5mRE|e4lvb8R4gT>
 
 plt.figure(figsize=(8, 6))
 sns.heatmap(conf_matrix, annot=True, fmt="g", cmap="Blues")
@@ -2475,7 +2499,7 @@ plt.xlabel("Predicted")
 plt.ylabel("Actual")
 plt.show()
 
-# |%%--%%| <0OXjiDUbJq|AvvpHFhvCN>
+# |%%--%%| <e4lvb8R4gT|UnUwyN3wCK>
 
 # Accuracy
 evaluator_acc = MulticlassClassificationEvaluator(labelCol="star_rating", predictionCol="prediction", metricName="accuracy")
@@ -2488,7 +2512,7 @@ f1_score = evaluator_f1.evaluate(predictions)
 print(f"Accuracy: {accuracy:.4f}")
 print(f"F1 Score: {f1_score:.4f}")
 
-# |%%--%%| <AvvpHFhvCN|hb1y1R2Dv6>
+# |%%--%%| <UnUwyN3wCK|NHfpuorHfa>
 r"""°°°
 Since we are going to build classification models to predict hotel star ratings,
 we first check the distribution of the `star_rating` column.
@@ -2496,21 +2520,20 @@ we first check the distribution of the `star_rating` column.
 This helps us understand whether the classes are balanced or imbalanced.
 If some star ratings appear much more frequently than others, it could affect the
 performance of our models, especially in terms of fairness and accuracy across classes.
-
 °°°"""
-# |%%--%%| <hb1y1R2Dv6|6v31mzFQAp>
+# |%%--%%| <NHfpuorHfa|KrXvfEl3kH>
 
 # we count how many hotels belong to each star rating so we can check if the data is balanced
 hotel_with_stars.groupBy("star_rating").count().orderBy("star_rating").show()
 
-# |%%--%%| <6v31mzFQAp|a7Sn7HRl8e>
+# |%%--%%| <KrXvfEl3kH|Xwdsx8i08o>
 r"""°°°
 We can say that the dataset is heavily skewed toward higher-rated hotels,
 especially 4-star ones. This imbalance might affect model performance if we're
 analyzing or predicting based on star rating, as the underrepresented classes (like 2-star)
 may not provide enough data to learn from effectively.
 °°°"""
-# |%%--%%| <a7Sn7HRl8e|e6xgJI2Bez>
+# |%%--%%| <Xwdsx8i08o|ZJ7oRsQUHT>
 r"""°°°
 Initially, we will begin building the model without addressing the class imbalance
 in hotel star ratings. This approach will give us a baseline understanding of the
@@ -2520,7 +2543,8 @@ dominate the dataset.
 However, we will later apply balancing techniques such as resampling, SMOTE, or
 class weighting, because we anticipate the following issues:
 °°°"""
-# |%%--%%| <e6xgJI2Bez|9XV7r3aiHc>
+# |%%--%%| <ZJ7oRsQUHT|WQjsOm9nlL>
+
 # we shift the star ratings to start from 0 so they work with models like Naive Bayes and MLP
 hotel_adjusted = hotel_with_stars.withColumn("star_rating_adj", col("star_rating") - 1)
 
@@ -2563,8 +2587,7 @@ evaluate_model("Decision Tree", dt)
 evaluate_model("Random Forest", rf)
 evaluate_model("Multilayer Perceptron", mlp)
 
-
-# |%%--%%| <9XV7r3aiHc|Rb3fN85vfz>
+# |%%--%%| <WQjsOm9nlL|YABItIzOfP>
 r"""°°°
 Here we can see the performance of different classification models on the task of
 predicting hotel star ratings.
@@ -2586,29 +2609,28 @@ the multiple classes.
 
 Overall, Logistic Regression appears to be the most suitable model for this dataset
 in its current form.
-
 °°°"""
-# |%%--%%| <Rb3fN85vfz|EepiOHODFA>
+# |%%--%%| <YABItIzOfP|BPobcFcYEq>
 r"""°°°
 ### Clustering
 °°°"""
-# |%%--%%| <EepiOHODFA|61oAK1WM9e>
+# |%%--%%| <BPobcFcYEq|5eH4Uuc3mp>
 
 hotel_with_stars.count()
 
-# |%%--%%| <61oAK1WM9e|Lr6Tjmi2Et>
+# |%%--%%| <5eH4Uuc3mp|zoR4nfvP09>
 
 hotel_with_stars.show()
 
-# |%%--%%| <Lr6Tjmi2Et|FgxVbBx04b>
+# |%%--%%| <zoR4nfvP09|aMRY6jJmCl>
 
 cleaned.count()
 
-# |%%--%%| <FgxVbBx04b|KZ6SzGKb0K>
+# |%%--%%| <aMRY6jJmCl|hTRO7TWZzm>
 
 cleaned.show()
 
-# |%%--%%| <KZ6SzGKb0K|UOG12irSOp>
+# |%%--%%| <hTRO7TWZzm|KG23VMTBxr>
 r"""°°°
 Here we use K-Means clustering to group hotels based on review-related features
 such as average score, sentiment counts, and review activity.
@@ -2616,12 +2638,12 @@ such as average score, sentiment counts, and review activity.
 We then compare the resulting clusters with the actual star ratings to see if
 similar hotels tend to share the same rating.
 °°°"""
-# |%%--%%| <UOG12irSOp|PPffkthyu0>
+# |%%--%%| <KG23VMTBxr|NrBDFE3GA8>
 r"""°°°
 We are using the additional dataset we previously created with star ratings
 through the machine learning model.
 °°°"""
-# |%%--%%| <PPffkthyu0|AOLNvYkzwJ>
+# |%%--%%| <NrBDFE3GA8|FiSPyj16Nu>
 
 # we choose the features we think are most relevant for grouping the hotels based on guest reviews and behavior
 selected_features = [
@@ -2645,8 +2667,7 @@ clustered = model.transform(cluster_input)
 # we now look at how the actual star ratings are spread across the different clusters
 clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
 
-
-# |%%--%%| <AOLNvYkzwJ|0ZU0m76OK2>
+# |%%--%%| <FiSPyj16Nu|5BMRB3TFId>
 r"""°°°
 The table shows how many hotels in each cluster (0, 1, or 2) belong to each star
 rating category (from 2 to 5).
@@ -2670,7 +2691,7 @@ hotels with slightly different review characteristics than those in Cluster 0.
 Overall, the clustering captures differences in hotel quality to some extent,
 with Cluster 0 standing out as the group with the highest-rated hotels.
 °°°"""
-# |%%--%%| <0ZU0m76OK2|q9lQWJy6aj>
+# |%%--%%| <5BMRB3TFId|3kZVEqXfFE>
 r"""°°°
 To improve the clustering and better understand how well our data is grouped,
 we decided to test different values for k (the number of clusters).
@@ -2686,15 +2707,14 @@ we can use the elbow method to find the point where increasing the number of clu
 stops giving us significantly better results. That point usually indicates the
 most appropriate number of clusters.
 °°°"""
-# |%%--%%| <q9lQWJy6aj|ciZ9LvWoVG>
+# |%%--%%| <3kZVEqXfFE|eiu5JQOrho>
 r"""°°°
 Here we test different values for k to figure out which number of clusters works best.
 We use the Within Set Sum of Squared Errors (WSS) to evaluate each model and look
 for the point where the error stops dropping significantly — that helps us decide
 the optimal number of clusters.
-
 °°°"""
-# |%%--%%| <ciZ9LvWoVG|e0iXO2BSRA>
+# |%%--%%| <eiu5JQOrho|FYUMpnW8jQ>
 
 # we test different values for k to find the best number of clusters
 for k in range(2, 9):
@@ -2703,8 +2723,7 @@ for k in range(2, 9):
     wss = model.summary.trainingCost
     print(f"k = {k}, Within Set Sum of Squared Errors = {wss:.2f}")
 
-
-# |%%--%%| <e0iXO2BSRA|k21qJYhZFI>
+# |%%--%%| <FYUMpnW8jQ|wMnvczLujK>
 r"""°°°
 We tested different values of k and saw that the WSS drops significantly until
 around k = 4 or 5, suggesting that these are good options for clustering.
@@ -2713,17 +2732,15 @@ Based on this, we now continue with k = 4 to see how the clusters relate to star
 **Next, we’ll analyze the average values in each cluster to understand what kind
 of hotels each group represents, and possibly use the cluster ID as a new feature
 in our classification models.**
-
 °°°"""
-# |%%--%%| <k21qJYhZFI|PmJaowXW4O>
+# |%%--%%| <wMnvczLujK|60BRUd77Pt>
 r"""°°°
 TODO: Mention elbow method on plot to vizualize WDD drop as k increased
 
 Since we saw that k = 4 offers a good balance between model simplicity and error
 reduction, we use this value to apply KMeans clustering on the hotel datas
-
 °°°"""
-# |%%--%%| <PmJaowXW4O|w1SxUqvYA4>
+# |%%--%%| <60BRUd77Pt|gHoosfaUqm>
 
 # We start by selecting the features that we believe best represent hotel review behavior
 selected_features = [
@@ -2750,8 +2767,7 @@ clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rat
 # We also compute the average of each feature per cluster to understand what characterizes each group
 clustered.groupBy("cluster").agg({col: "mean" for col in selected_features}).show()
 
-
-# |%%--%%| <w1SxUqvYA4|H7YuWJgHtx>
+# |%%--%%| <gHoosfaUqm|Q9IQ6xO9EV>
 r"""°°°
 Our clustering results show that Cluster 0 is the largest and most diverse,
 mainly composed of 4- and 5-star hotels, suggesting it's the core group of
@@ -2765,7 +2781,8 @@ a niche or lower-activity group.
 
 Overall, the clusters align reasonably well with hotel star ratings.
 °°°"""
-# |%%--%%| <H7YuWJgHtx|8CXvDMOEUt>
+# |%%--%%| <Q9IQ6xO9EV|nrERleJIa9>
+
 pca = PCA(k=2, inputCol="features", outputCol="pca_features")
 pca_model = pca.fit(cluster_input)
 pca_result = pca_model.transform(cluster_input)
@@ -2788,8 +2805,7 @@ plt.xlabel("PC1")
 plt.ylabel("PC2")
 plt.show()
 
-
-# |%%--%%| <8CXvDMOEUt|ox7tw5Q6TU>
+# |%%--%%| <nrERleJIa9|SxxfBBHiBf>
 r"""°°°
 In this step, we use the ClusteringEvaluator to calculate the Silhouette Score,
 which helps us assess the quality of our clusters.
@@ -2797,26 +2813,23 @@ which helps us assess the quality of our clusters.
 We set the evaluator to use squared Euclidean distance and apply it to our clustered data.
 The resulting score tells us how well each hotel fits within its assigned cluster,
 and a higher value indicates better-defined and more separated clusters.
-
 °°°"""
-# |%%--%%| <ox7tw5Q6TU|nWqjk3ZQGx>
+# |%%--%%| <SxxfBBHiBf|6UlTOKG6lj>
 
 evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
 silhouette = evaluator.evaluate(clustered)
 print(f"Silhouette Score: {silhouette:.3f}")
 
-# |%%--%%| <nWqjk3ZQGx|6Bp42ZWUe9>
+# |%%--%%| <6UlTOKG6lj|K9vIMtZs6c>
 r"""°°°
 To assess the quality of our clustering, we calculated the `Silhouette Score`,
 which ranges from **-1 to 1**:
   - A score close to **+1** means the hotel is well-matched to its cluster and far from others.
   - A score around **0** indicates overlap between clusters.
   - A negative score suggests possible misclassification.
-
-
-
+  
 °°°"""
-# |%%--%%| <6Bp42ZWUe9|T8BtJvnqrL>
+# |%%--%%| <K9vIMtZs6c|Q9ZicyJocJ>
 r"""°°°
 We evaluated the quality of our clusters using the Silhouette Score and obtained
 a value of 0.754, which indicates that the clusters are well-defined and clearly separated.
@@ -2827,20 +2840,18 @@ cluster and not overlapping with others, supporting our choice of using k = 4.
 It also confirms that the features we selected provide meaningful structure for
 grouping the hotels based on guest review behavior.
 °°°"""
-# |%%--%%| <T8BtJvnqrL|xG18lhe8Va>
+# |%%--%%| <Q9ZicyJocJ|RKE6GTdtC5>
 
 from pyspark.ml.clustering import BisectingKMeans
 bkm = BisectingKMeans(featuresCol="features", predictionCol="cluster", k=4)
 bkm_model = bkm.fit(cluster_input)
 bkm_clustered = bkm_model.transform(cluster_input)
 
-
-# |%%--%%| <xG18lhe8Va|eF9FEYa8Ib>
+# |%%--%%| <RKE6GTdtC5|DAA5ZWbkpJ>
 
 bkm_clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
 
-
-# |%%--%%| <eF9FEYa8Ib|bIZs5pdxJB>
+# |%%--%%| <DAA5ZWbkpJ|KfkITEpYC4>
 r"""°°°
 In this analysis, we grouped hotel reviews into four clusters and examined the
 distribution of star ratings (3, 4, and 5 stars) within each cluster.
@@ -2859,20 +2870,17 @@ possibly representing outliers or a niche group of reviews.
 This distribution helps us interpret the nature of each cluster and assess how
 review sentiment varies across them.
 °°°"""
-# |%%--%%| <bIZs5pdxJB|tagiRGED5y>
+# |%%--%%| <KfkITEpYC4|pnXd5duDpg>
 
 evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
 silhouette_bkm = evaluator.evaluate(bkm_clustered)
 print(f"Silhouette Score (Bisecting KMeans): {silhouette_bkm:.3f}")
 
-
-# |%%--%%| <tagiRGED5y|b5qw0YAu7d>
+# |%%--%%| <pnXd5duDpg|m9lED6XtUy>
 r"""°°°
 That’s a great result — even slightly better than your previous KMeans score (which was 0.754).
-
-
 °°°"""
-# |%%--%%| <b5qw0YAu7d|sc0poqgfg6>
+# |%%--%%| <m9lED6XtUy|cuo1kCOl77>
 r"""°°°
 We evaluated Bisecting KMeans using the Silhouette Score and obtained a value of 0.768,
 which is slightly higher than the score we got with standard KMeans (0.754).
@@ -2887,7 +2895,7 @@ Given this, we could consider using the Bisecting KMeans clustering results as
 our final version or at least give it more weight when interpreting the patterns
 in hotel groupings.
 °°°"""
-# |%%--%%| <sc0poqgfg6|1IZKU07ZzB>
+# |%%--%%| <cuo1kCOl77|kfztrrVzfI>
 r"""°°°
 #### Clustering Method Comparison
 
@@ -2917,11 +2925,11 @@ high-engagement vs. low-rated, low-activity groups, and can be useful for tasks
 like **targeted marketing**, **service improvement**, or as a **feature** in future
 predictive models.
 °°°"""
-# |%%--%%| <1IZKU07ZzB|D8hh8q4rLg>
+# |%%--%%| <kfztrrVzfI|A7AfMapZrM>
 r"""°°°
  Visualize Cluster Feature Averages with Bar Plot
 °°°"""
-# |%%--%%| <D8hh8q4rLg|kWUkcxpK5t>
+# |%%--%%| <A7AfMapZrM|jESyexL5QY>
 
 # Get mean of each feature per cluster
 
@@ -2929,8 +2937,7 @@ means = bkm_clustered.groupBy("cluster").agg(
     *[mean(c).alias(c) for c in selected_features]
 ).toPandas().set_index("cluster")
 
-
-# |%%--%%| <kWUkcxpK5t|wwEuT7nDL1>
+# |%%--%%| <jESyexL5QY|N0d5Mt1ntG>
 
 # Normalize the feature means (Min-Max Scaling)
 normalized = (means - means.min()) / (means.max() - means.min())
@@ -2945,7 +2952,8 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# |%%--%%| <wwEuT7nDL1|egyFAue58i>
+# |%%--%%| <N0d5Mt1ntG|9X3sDmn3pm>
+
 # This bar chart shows how each cluster differs across the features
 
 selected_features = [
@@ -2957,31 +2965,37 @@ selected_features = [
     "days_since_review"
 ]
 
-# |%%--%%| <egyFAue58i|YIDIOVP49p>
+# |%%--%%| <9X3sDmn3pm|hXOng7fov0>
 
 assembler = VectorAssembler(inputCols=selected_features, outputCol="features")
 review_cluster_input = assembler.transform(cleaned)
 
-# |%%--%%| <YIDIOVP49p|1Gz04Nx2g8>
+# |%%--%%| <hXOng7fov0|0N0oRPPckG>
 
 print("Number of rows:", review_cluster_input.count())
 
-# |%%--%%| <1Gz04Nx2g8|ePjkMJK7I0>
+# |%%--%%| <0N0oRPPckG|IPdFoquq4N>
 
 review_cluster_input.select(selected_features).printSchema()
 
-# |%%--%%| <ePjkMJK7I0|lsooRzUIq2>
+# |%%--%%| <IPdFoquq4N|MH3zXnHxGU>
 
 for col in selected_features:
     review_cluster_input.select(col).filter(isnan(col) | isnull(col)).show(1)
 
-# |%%--%%| <lsooRzUIq2|NIiXvqxH41>
+# |%%--%%| <MH3zXnHxGU|HBi6JhUJLA>
 
 # Try with only one valid column (e.g., 'Average_Score' or 'Reviewer_Score') if it exists
 cleaned.select("Reviewer_Score").filter("Reviewer_Score is not null").show()
 
-# |%%--%%| <NIiXvqxH41|6PIgnADl4m>
+# |%%--%%| <HBi6JhUJLA|ZmKW4rmrao>
 
 kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
 model = kmeans.fit(review_cluster_input)
 review_clusters = model.transform(review_cluster_input)
+#|%%--%%| <ZmKW4rmrao|P9Jgd42MVD>
+r"""°°°
+# Conclusion
+
+TODO
+°°°"""

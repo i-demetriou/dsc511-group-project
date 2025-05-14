@@ -6,6 +6,14 @@ r"""°°°
 - Maria Tsilidou
 - Anastasios Nikodimou
 - Ioannis Demetriou
+
+## Abstract
+
+In the era of digital transformation, online hotel reviews have become a significant factor in
+shaping travelers' booking decisions. Reviews provide firsthand experiences from guests,
+offering insights into hotel quality, customer satisfaction, and areas of improvement. Using
+data collection, aggregation and processing techniques we seek to formulate and answer
+questions related to hotel ratings, customer sentiment, and prediction modeling.
 °°°"""
 # |%%--%%| <3TXSJ6triW|CB2Tvqi47w>
 r"""°°°
@@ -48,7 +56,6 @@ from nltk.stem import WordNetLemmatizer
 from pyspark.ml import Pipeline
 from pyspark.ml.classification import (
     DecisionTreeClassifier,
-    NaiveBayes,
     MultilayerPerceptronClassifier,
     LogisticRegression,
     RandomForestClassifier,
@@ -80,25 +87,19 @@ from pyspark.sql.functions import(
     avg,
     array,
     array_contains,
-    arrays_zip,
     col,
-    concat,
     concat_ws,
     count,
-    explode,
-    expr,
     isnan,
     isnull,
     length,
     lit,
     lower,
     mean,
-    regexp_extract,
     regexp_replace,
     size,
     skewness,
     split,
-    sum as Fsum,
     to_date,
     trim,
     udf,
@@ -107,45 +108,28 @@ from pyspark.sql.functions import(
 from pyspark.sql.types import ArrayType, BooleanType, FloatType, IntegerType, StringType
 
 sns.set_palette("viridis")
-# Get or create a SparkSession object
 spark = SparkSession.builder.appName("DSC511-GroupProject").master("local[*]").config("spark.driver.memory", "10g").getOrCreate()
 
 # |%%--%%| <IdP6yJ3P5X|pXyO3xDECF>
 r"""°°°
-## Exploratory Data Analysis
+## Dataset
 
-In this section we will load, understand the dimension and schema, and explore our
-dataset.
+The analysis will use the "515k Hotel Reviews Data in Europe" dataset obtained from
+[here](https://www.kaggle.com/datasets/jiashenliu/515k-hotel-reviews-data-in-europe)
+at the time of writing. It contains over 500k reviews, scraped from Booking.com, scoring
+1493 luxury hotels across Europe. Each review includes 17 features, including textual
+feedback and scoring, reviewer nationality, hotel location, providing diverse data types for
+analysis.
 
-The dataset is obtained from [here](https://www.kaggle.com/datasets/jiashenliu/515k-hotel-reviews-data-in-europe).
-
-
-The csv file contains 17 fields. The description of each field is as below:
-
-- `Hotel_Address`: Address of hotel.
-- `Review_Date`: Date when reviewer posted the corresponding review.
-- `Average_Score`: Average Score of the hotel, calculated based on the latest comment in the last year.
-- `Hotel_Name`: Name of Hotel
-- `Reviewer_Nationality`: Nationality of Reviewer
-- `Negative_Review`: Negative Review the reviewer gave to the hotel. If the reviewer does not give the negative review, then it should be: 'No Negative'
-- `Review_Total_Negative_Word_Counts`: Total number of words in the negative review.
-- `Positive_Review`: Positive Review the reviewer gave to the hotel. If the reviewer does not give the negative review, then it should be: 'No Positive'
-- `Review_Total_Positive_Word_Counts`: Total number of words in the positive review.
-- `Reviewer_Score`: Score the reviewer has given to the hotel, based on his/her experience
-- `Total_Number_of_Reviews_Reviewer_Has_Given`: Number of Reviews the reviewers has given in the past.
-- `Total_Number_of_Reviews`: Total number of valid reviews the hotel has.
-- `Tags`: Tags reviewer gave the hotel.
-- `days_since_review`: Duration between the review date and scrape date.
-- `Additional_Number_of_Scoring`: There are also some guests who just made a scoring on the service rather than a review. This number indicates how many valid scores without review in there.
-- `lat`: Latitude of the hotel
-- `lng`: longtitude of the hotel
-
-Here we took advantage of spark's ability to understand files compressed with gzip
-and we added the dataset in a `.csv.gz` form.
+In this section we will load and inspect the dataset, clean it if necessary, and
+prepare it for analysis by casting to appropriate types and other feature engineering.
 °°°"""
 # |%%--%%| <pXyO3xDECF|usXd8qo2BZ>
 
 # Loading dataset
+
+# Here we took advantage of spark's ability to understand files compressed with gzip
+# and we added the dataset in a `.csv.gz` form.
 
 # Note: inferSchema=True is "expensive". Consider removing it for performance if needed
 # Consider fitting the once deduced `original_schema` while re-running this
@@ -207,31 +191,30 @@ original.select(
 r"""°°°
 ### Cleaning the dataset
 
-We want to check the quality of our dataset. Since we are dealing with reviews,
-we want to check if:
+We want to check the quality of our dataset. In this first interaction with the
+dataset we will:
 
-- There are missing values
-- There are duplicate entries
-- There are any outliers or noise
-- There are obvious erroneous entries
-- There are missing features
+- Check if there are missing values, and mark them as such.
+- Check if there are duplicate entries, and drop them.
+- Check if there are obvious erroneous entries, and remove them.
+- Convert, where appropriate, data in a format easier for Spark to process.
 °°°"""
 # |%%--%%| <S9ZaPmqDUH|RazsqhR4nL>
 
-cleaned = original
-
-# Checking for missing values
+cleaned = original # Keep a copy of original dataset for comparisons
 
 # Counting nulls in each column
-missing_counts = cleaned.select([Fsum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
-
-missing_counts.show()
+missing_counts = cleaned.select([F.sum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
+missing_counts.toPandas().T
 
 # There are empty values in the dataset but the are not shown here
 
 # |%%--%%| <RazsqhR4nL|vujMpItqQJ>
 r"""°°°
-After further investigating the dataset we noticed that there are empty values that are not treated as null. This may be happening becuase there are empty strings and not null values or they might contain invisible characters (e.g. space). We will replace the empty string with null so that Sparks recognises it and treats it as a missing value.
+Our dataset contains empty values that are not treated as null. This could be because
+there are empty strings and not null values or they might contain white space
+characters. We will replace the empty string with null so that Spark recognizes it
+and treats it as a missing value.
 °°°"""
 # |%%--%%| <vujMpItqQJ|9u2YOfPlvj>
 
@@ -239,54 +222,88 @@ After further investigating the dataset we noticed that there are empty values t
 for c in cleaned.columns:
     cleaned = cleaned.withColumn(c, when(trim(col(c)) == '', None).otherwise(col(c)))
 
-# |%%--%%| <9u2YOfPlvj|5Vx3eHrWEV>
+# Re-running the previous code to check whether the empty strings got indeed converted to null
+missing_counts = cleaned.select([F.sum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
+missing_counts.toPandas().T
 
-# Rerunning the previous code to check whether the empty strings got indeed converted to null
-
-missing_counts_new = cleaned.select([Fsum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
-missing_counts_new.show()
-
-# |%%--%%| <5Vx3eHrWEV|WmRZsDByAP>
+# |%%--%%| <9u2YOfPlvj|WmRZsDByAP>
 r"""°°°
-Now it is obvious that the columns `Reviewer_Nationality`, `Negative_Review` and `Positive_Review` contain null values that spark can identify.
+The `Reviewer_Nationality`, `Negative_Review` and `Positive_Review` columns contain
+null values that spark can identify.
 °°°"""
 # |%%--%%| <WmRZsDByAP|Fx6ByHdnPj>
 r"""°°°
-Since we trated the empty strings we can deal with null values that have other forms.
+Empty strings is not the only "not-null" null values a string can have.
 In many datasets missing values can be represented as 'NA' (a string) instead of null.
 Spark won’t treat 'NA' as a missing value unless we explicitly handle it.
-So if we're only checking for null, we might miss those 'fake nulls'.
-This is why we need to check each column for the presence of 'fake nulls'.
+So if we're only checking for null, we might miss those 'not-null nulls'.
+This is why we need to check each column for the presence of 'not-null nulls'.
+
+The following code-snippet counts the "not-null" nulls in our dataset.
 °°°"""
 # |%%--%%| <Fx6ByHdnPj|PjPGq2ZxvB>
 
-# Define your list of fake/null-like strings
 fake_nulls = ['NA', 'N/A', 'na', 'n/a', 'null', 'None', ' N A', ' n a', ' N a']
 
-# Create empty list to collect the column names and NA counts
-fake_null_counts = []
+not_null_nulls = []
 
-# Loop through columns and count fake nulls in each
+# Loop through columns and count not-null nulls in each
 for column in cleaned.columns:
     num_fake_nulls = cleaned.select(
-        F.sum(when(col(column).isin(fake_nulls), 1).otherwise(0)).alias("fake_null_count")
-    ).collect()[0]["fake_null_count"]
+        F.sum(when(col(column).isin(fake_nulls), 1).otherwise(0)).alias("not_null_nulls")
+    ).collect()[0]["not_null_nulls"]
 
     if num_fake_nulls > 0:
-        fake_null_counts.append((column, num_fake_nulls))
+        not_null_nulls.append((column, num_fake_nulls))
 
 # Display the result
-spark.createDataFrame(fake_null_counts, ["column", "fake_null_count"]).show(truncate=False)
+spark.createDataFrame(not_null_nulls, ["column", "not_null_nulls"]).show(truncate=False)
 
+#|%%--%%| <PjPGq2ZxvB|307mjsRf0U>
 
-# |%%--%%| <PjPGq2ZxvB|FxQWFGyIAc>
+cleaned = cleaned\
+    .withColumn(
+        'Negative_Review',
+        trim(col('Negative_Review'))
+    )\
+    .withColumn(
+        'Negative_Review',
+        when(col('Negative_Review').isin(fake_nulls), lit(None) ).otherwise((col('Negative_Review')))
+    )\
+    .withColumn(
+        'Positive_Review',
+        trim(col('Positive_Review'))
+    )\
+    .withColumn(
+        'Positive_Review',
+        when(col('Positive_Review').isin(fake_nulls), lit(None) ).otherwise((col('Positive_Review')))
+    )
+
+# |%%--%%| <307mjsRf0U|FxQWFGyIAc>
 r"""°°°
-In total we have 9,917 missing values (1.9% of the whole dataset).
-There are more cases of missing values that will be analysed later.
-We will also later on convert all these fake null values into null values that Spark
-can actually process (just like we did with the empty strings).
+The reviews and coordinates contain values that should be marked as NULL.
+
+According to the dataset description, we expect `No Negative` in the `Negative_Review`
+column instead of a `NULL` and a `No Positive` in the `Positive_Review` column.
+
+Further processing of the reviews will take place in the NLP section.
 °°°"""
-# |%%--%%| <FxQWFGyIAc|mjPmAX1D6U>
+# |%%--%%| <FxQWFGyIAc|pIgUIBKBkB>
+
+# According to the dataset, no positive / negative reviews are expressed as 'No Positive' / 'No Negative'
+cleaned = cleaned\
+    .withColumn(
+        'Negative_Review',
+        when(col('Negative_Review') == 'No Negative', lit(None)).otherwise(col('Negative_Review'))
+    ).withColumn(
+        'Positive_Review',
+        when(col('Positive_Review') == 'No Positive', lit(None)).otherwise(col('Positive_Review'))
+    )
+
+# Verify
+cleaned.select('Negative_Review', 'Positive_Review').show()
+
+# |%%--%%| <pIgUIBKBkB|mjPmAX1D6U>
 
 # Checking for duplicates
 cleaned = cleaned.drop_duplicates()
@@ -299,22 +316,12 @@ r"""°°°
 
 We now inspect the schema and encoding of our features. We want to cast the data
 into a format that will be easier to process.
-°°°"""
-# |%%--%%| <v80nCQDi4T|hAYfYS91Ml>
-r"""°°°
+
 From the schema and the first few observations, we see that we can benefit
 from casting to more python friendly instances, or categorical features that
 can be encoded as such.
 °°°"""
-# |%%--%%| <hAYfYS91Ml|1XolEtjpnw>
-r"""°°°
-Some datasets use different string literals to mean missing data. These include
-'NA', 'No Review', 'N/A', NONE', 'NULL', 'MISSING', '', 0, etc.
-
-Let's harmonize by replacing such data with `None` and cast the coordinates
-decimal degrees to float.
-°°°"""
-# |%%--%%| <1XolEtjpnw|HY8O5B35Gh>
+# |%%--%%| <v80nCQDi4T|HY8O5B35Gh>
 
 # We notice that lon/lat represented here as decimal degrees should be numeric,
 # but they are typed as strings. This could mean that there are some "hard-coded" NAs
@@ -376,22 +383,7 @@ cleaned\
     .filter(length(col('Hotel_Address')) < 10 )\
     .count()
 
-# |%%--%%| <qd5ZgtWmHM|pIgUIBKBkB>
-
-# According to the dataset, no positive / negative reviews are expressed as 'No Positive' / 'No Negative'
-cleaned = cleaned\
-    .withColumn(
-        'Negative_Review',
-        when(col('Negative_Review') == 'No Negative', lit(None)).otherwise(col('Negative_Review'))
-    ).withColumn(
-        'Positive_Review',
-        when(col('Positive_Review') == 'No Positive', lit(None)).otherwise(col('Positive_Review'))
-    )
-
-# Verify
-cleaned.select('Negative_Review', 'Positive_Review').show()
-
-# |%%--%%| <pIgUIBKBkB|fLu8Y4lvF9>
+# |%%--%%| <qd5ZgtWmHM|fLu8Y4lvF9>
 r"""°°°
 We notice that some of our features are time related, but are typed as strings.
 
@@ -649,46 +641,21 @@ cleaned = hotel_indexer.fit(cleaned).transform(cleaned)
 # Show a few encoded hotel names
 cleaned.select('Hotel_Name', 'Hotel_Name_Encoded').show(5)
 
-# |%%--%%| <sl86WChYtl|0Q4IStyLWj>
+# |%%--%%| <sl86WChYtl|dS1WWraI0O>
 r"""°°°
-Summary of the cleaned dataset:
-- our data needs scaling (mean of `Average_Score` is 8.4 whereas mean of `Total_Number_of_Reviews` is 2744.7)
-- text features (reviews) appear to have mean and standard deviation implying that there are numeric characters present.
-- The count of `Reviewer_Nationality`, `Negative_Review`, `Positive_Review`, `lat` and `lng` is less than the total number of observations which indicate the presence on missing values in the dataset.
+The `Tags` feature is a diamond in the rough, potentially revealing a lot of
+consise information about the hotel. We will explore it later in the NLP section.
+
+Here we add numerical a numerical variable capturing the number of tags of each review.
 °°°"""
-# |%%--%%| <0Q4IStyLWj|dS1WWraI0O>
-r"""°°°
-We decided that another potentially beneficial feature would be to create a numerical
-variable capturing the number of tags associated with each review.
-
-°°°"""
-# |%%--%%| <dS1WWraI0O|oDGRhkOdHG>
-
-cleaned.select("Tags").first()['Tags']
-# Display the first value in the 'Tags' column to understand its format.
-
-# |%%--%%| <oDGRhkOdHG|uOMclDnfyW>
-
-cleaned = cleaned.withColumn(
-    "Num_Tags",
-    size(split(regexp_replace(regexp_replace("Tags", r"^\[|\]$", ""), "'", ""), ", "))
-)
-
-# We create a new column 'Num_Tags' to count how many tags each row has.
-# We clean the 'Tags' by removing brackets and quotes, split by comma, and count the parts.
-
-# |%%--%%| <uOMclDnfyW|KUm4HIVfoT>
-
+# |%%--%%| <dS1WWraI0O|KUm4HIVfoT>
 cleaned = cleaned.withColumn(
     "Num_Tags",
     when(length("Tags") <= 2, 0).otherwise(
         size(split(regexp_replace(regexp_replace("Tags", r"^\[|\]$", ""), "'", ""), ", "))
     )
 )
-cleaned.select("Tags", "Num_Tags").show(10, truncate=False)
-
-# We display the first 10 rows with the original 'Tags' and the new 'Num_Tags' column to check if everything worked.
-
+cleaned.select("Tags", "Num_Tags").show(10)
 
 # |%%--%%| <KUm4HIVfoT|SyzxrAi7I5>
 
@@ -705,23 +672,20 @@ numerical_features = [
 
 # |%%--%%| <SyzxrAi7I5|zEVV0DtGfh>
 
-
-numerical_features = [
-    'Additional_Number_of_Scoring',
-    'Average_Score',
-    'Review_Total_Negative_Word_Counts',
-    'Review_Total_Positive_Word_Counts',
-    'Reviewer_Score',
-    'Total_Number_of_Reviews',
-    'Total_Number_of_Reviews_Reviewer_Has_Given']
-
-#At this point preprocessing has finished we save our data to parquet
-#We write the DataFrame to Parquet and allow overwriting if the file exists
+# At this point preprocessing has finished we save our data to parquet
+# We write the DataFrame to parquet to allow us to resume from here to save time
 cleaned.write.mode("overwrite").parquet('./data/Hotel_Reviews')  # no .parquet extension!
+cleaned.persist()
 cleaned.summary().show()
 
+# |%%--%%| <zEVV0DtGfh|0Q4IStyLWj>
+r"""°°°
+The data cleaning phase was completed. We note from the summary of the clean dataset:
 
-# |%%--%%| <zEVV0DtGfh|Vf8E7ZPTZ3>
+- Features will need scaling - the mean of `Average_Score` is 8.4 compared to 2744.7 of `Total_Number_of_Reviews`.
+- Text features appear to have numerical metrics implying that there are numeric characters.
+°°°"""
+# |%%--%%| <0Q4IStyLWj|Vf8E7ZPTZ3>
 r"""°°°
 ### Sampling
 
@@ -739,15 +703,34 @@ we aim to generate an as balanced subset as posible
 # - Try to have equal representation from cities
 # - Only consider hotels with a certain number of reviews
 
-sample = cleaned.sample(fraction=0.1, withReplacement=False, seed=42)
+class Sampler:
+    def __init__(self, seed=42):
+        self.seed = seed
+
+    @property
+    def deci(self):
+        return cleaned.sample(fraction=0.1, withReplacement=False, seed=self.seed)
+
+    @property
+    def centi(self):
+        return cleaned.sample(fraction=0.01, withReplacement=False, seed=self.seed)
+
+    @property
+    def milli(self):
+        return cleaned.sample(fraction=0.001, withReplacement=False, seed=self.seed)
+
+sampler = Sampler(cleaned)
 
 # |%%--%%| <bXJ9TomOiB|2SKeFmw17q>
 r"""°°°
 ### Feature Visualization
+
+We will now visualize our dataset using a subset of the dataset. By the law of
+large numbers it would capture the variability of the complete dataset.
 °°°"""
 # |%%--%%| <2SKeFmw17q|8s0ON3p77R>
 
-sample_pandas = sample.select(numerical_features).toPandas()
+sample_pandas = sampler.deci.select(numerical_features).toPandas()
 
 print('[Sample] Numerical features description:')
 sample_pandas[numerical_features].describe()
@@ -779,9 +762,7 @@ plt.gca().spines['right'].set_visible(False)
 
 plt.show()
 
-# |%%--%%| <7CK6jtBJao|gb2Ryho8N2>
-
-# |%%--%%| <gb2Ryho8N2|8iyvgUKxJb>
+# |%%--%%| <7CK6jtBJao|8iyvgUKxJb>
 
 cleaned.select(skewness("Average_Score")).show()
 
@@ -812,8 +793,8 @@ g = sns.pairplot(
     x_vars=numerical_features,
     y_vars="Average_Score",
     kind="reg",  # Regression line
-    plot_kws={'scatter_kws': {'alpha': 0.5, 's': 20, 'color': '#3498db'}},  # Customize scatter points
-    height=2.5,  # Adjust individual plot height
+    plot_kws={'scatter_kws': {'alpha': 0.5, 's': 20, 'color': '#3498db'}},
+    height=2.5,
 )
 
 # Improve spacing
@@ -958,66 +939,77 @@ cleaned = cleaned.withColumn(
 cleaned.select(
     "Negative_Review",
     "Negative_Word_Count",
+    "Review_Total_Negative_Word_Counts",
+).show(5)
+
+#|%%--%%| <dm895YhSA2|E8SKhTONiM>
+
+cleaned.select(
     "Positive_Review",
     "Positive_Word_Count",
-    "Review_Total_Negative_Word_Counts",
     "Review_Total_Positive_Word_Counts"
-).show(5, truncate=False)
+).show(5)
 
-# We select and display the review texts, the word counts we calculated, and the original total word count columns
-# This allows us to visually compare our new word counts with the existing 'Review_Total_Negative_Word_Counts' and 'Review_Total_Positive_Word_Counts'
-
-# |%%--%%| <dm895YhSA2|qRzaZ2TSSs>
+# |%%--%%| <E8SKhTONiM|qRzaZ2TSSs>
 r"""°°°
 We created two new columns that count the actual number of words in each review.
 The existing columns from the original dataset include extra blanks, so their word
 counts may be inaccurate.
+
+We will drop them from our analysis.
 °°°"""
 # |%%--%%| <qRzaZ2TSSs|f5GTqNqOxm>
 r"""°°°
 ### Text pre-processing
 
-Before applying any advanced analytics methods to our data, in order to execute text analytics,
-we need to pre-process our text. Usually this step is consisted by the methods we shall see below
+Before applying any advanced analytics methods to our data, in order to execute
+text analytics, we need to pre-process our text. Usually this step is consisted
+by the methods we shall see below.
 °°°"""
 # |%%--%%| <f5GTqNqOxm|gjMWWPYdWG>
 r"""°°°
-#### 1.5.1 Tokenization
+#### Tokenization
 °°°"""
 # |%%--%%| <gjMWWPYdWG|FkVnokKkcy>
 
-#Step 1:
 cleaned = cleaned.withColumn(
-    "Negative_Review_trimmed", when(col("Negative_Review").isNull(), None)
-                               .otherwise(trim(col("Negative_Review")))
+    "Negative_Review_trimmed",
+    when(col("Negative_Review").isNull(), None).otherwise(trim(col("Negative_Review")))
 ).withColumn(
-    "Positive_Review_trimmed", when(col("Positive_Review").isNull(), None)
-                               .otherwise(trim(col("Positive_Review")))
+    "Positive_Review_trimmed",
+    when(col("Positive_Review").isNull(), None).otherwise(trim(col("Positive_Review")))
 )
 
-# Step 2: Replace nulls with "" for RegexTokenizer
 cleaned = cleaned.withColumn(
-    "Negative_Review_safe", when(col("Negative_Review_trimmed").isNull(), "").otherwise(col("Negative_Review_trimmed"))
+    "Negative_Review_safe",
+    when(col("Negative_Review_trimmed").isNull(), "").otherwise(col("Negative_Review_trimmed"))
 ).withColumn(
-    "Positive_Review_safe", when(col("Positive_Review_trimmed").isNull(), "").otherwise(col("Positive_Review_trimmed"))
+    "Positive_Review_safe",
+    when(col("Positive_Review_trimmed").isNull(), "").otherwise(col("Positive_Review_trimmed"))
 )
 
-# Step 3: Apply RegexTokenizer with pattern \W (non-word characters)
+# Apply RegexTokenizer with pattern \W (non-word characters)
 regex_tokenizer_neg = RegexTokenizer(inputCol="Negative_Review_safe", outputCol="Negative_Tokens_Array", pattern="\\W")
 regex_tokenizer_pos = RegexTokenizer(inputCol="Positive_Review_safe", outputCol="Positive_Tokens_Array", pattern="\\W")
 
 cleaned = regex_tokenizer_neg.transform(cleaned)
 cleaned = regex_tokenizer_pos.transform(cleaned)
 
-# Step 4: Optional – Count tokens
+# Optional – Count tokens
 countTokens = udf(lambda tokens: len(tokens) if tokens else None, IntegerType())
 
-cleaned = cleaned.withColumn("Negative_Tokens_Count", when(col("Negative_Review").isNull(), None).otherwise(countTokens(col("Negative_Tokens_Array")))) \
-                 .withColumn("Positive_Tokens_Count", when(col("Positive_Review").isNull(), None).otherwise(countTokens(col("Positive_Tokens_Array"))))
+cleaned = cleaned\
+    .withColumn(
+        "Negative_Tokens_Count",
+        when(col("Negative_Review").isNull(), None).otherwise(countTokens(col("Negative_Tokens_Array")))) \
+    .withColumn("Positive_Tokens_Count",
+        when(col("Positive_Review").isNull(), None).otherwise(countTokens(col("Positive_Tokens_Array"))))
 
-# Step 5: Show results
-cleaned.select("Negative_Review", "Negative_Tokens_Array", "Negative_Tokens_Count",
-               "Positive_Review", "Positive_Tokens_Array", "Positive_Tokens_Count").show(5, truncate=False)
+cleaned\
+    .select(
+        "Negative_Review", "Negative_Tokens_Array", "Negative_Tokens_Count",
+        "Positive_Review", "Positive_Tokens_Array", "Positive_Tokens_Count")\
+    .show(5, truncate=False)
 
 # Prepare reviews: trim, replace nulls, split into words, countwords, and display
 # And for the column 'Tags' maybe we should use the regex tokenizer
@@ -1302,7 +1294,11 @@ print(f"Number of positive reviews containing the token 'nothing' with 1 or 2 to
 
 # |%%--%%| <CWsCRGgdzp|zl38RMRvVh>
 r"""°°°
-The number of positive reviews that do not correspond to actual positive reviews is smaller compared to the negative reviews we saw earlier. Therefore, we will only replace with missing values the observations that have no comment, and handle only those specific cases.(above code)
+The number of positive reviews that do not correspond to actual positive reviews
+is smaller compared to the negative reviews we saw earlier.
+
+Therefore, we will only replace with missing values the observations that have no comment,
+and handle only those specific cases.(above code)
 °°°"""
 # |%%--%%| <zl38RMRvVh|EtoHqFZA9o>
 
@@ -1401,11 +1397,9 @@ nltk.download('omw-1.4')
 lemmatizer = WordNetLemmatizer()
 
 # Python function for lemmatizing
-def lemmatize_tokens(tokens):
+@udf(ArrayType(StringType()))
+def lemmer_udf(tokens):
     return [lemmatizer.lemmatize(token) for token in tokens] if tokens else []
-
-# PySpark UDF
-lemmer_udf = udf(lemmatize_tokens, ArrayType(StringType()))
 
 # |%%--%%| <wVF6cBFETz|Z1gGkwq9nY>
 
@@ -1452,7 +1446,7 @@ print(f"Number of nulls in Positive_Tokens_Count: {nulls_positive_tokens}")
 
 # |%%--%%| <xrgqKdTYh6|Oum9GCaeBe>
 r"""°°°
-## Graph Analytic
+## Graph Analysis
 °°°"""
 # |%%--%%| <Oum9GCaeBe|IPUIpQDUii>
 
@@ -1550,11 +1544,7 @@ r"""°°°
 °°°"""
 # |%%--%%| <gQEJtJtSWb|VAbRvdJM2C>
 
-from pyspark.ml.feature import StringIndexer
-from pyspark.ml.recommendation import ALS
-from pyspark.sql.functions import explode
-
-# we encode reviewer_id and Hotel_Name to numeric form so ALS can use them
+# We encode reviewer_id and Hotel_Name to numeric form so ALS can use them
 reviewer_indexer = StringIndexer(inputCol="reviewer_id", outputCol="reviewer_id_index") \
                     .setHandleInvalid("keep")
 hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index") \
@@ -1597,7 +1587,7 @@ user_recs.show(truncate=False)
 
 # |%%--%%| <VAbRvdJM2C|ukctSe4eLo>
 r"""°°°
-#### RMSE Evaluation
+### RMSE Evaluation
 °°°"""
 # |%%--%%| <ukctSe4eLo|HdKZi6peTR>
 
@@ -1703,8 +1693,6 @@ From cleaned, compute average values per hotel for the following columns:
 °°°"""
 # |%%--%%| <VJHsPqhjH1|H7lElUOPvP>
 
-from pyspark.sql.functions import avg, count, col
-
 # Step 1: Define columns to compute averages on
 columns_to_average = [
     'Additional_Number_of_Scoring',
@@ -1736,7 +1724,6 @@ hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30
 
 # Step 7: Show final result
 hotel_avg_stats_filtered.show(truncate=False)
-
 
 # |%%--%%| <H7lElUOPvP|Z7RIuqMDf5>
 
@@ -1962,8 +1949,8 @@ r"""°°°
 # |%%--%%| <D5gaXvQ8M3|YONlYHN1nl>
 
 clean_reduced_hotels_most_reviews.select(
-    Fsum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
-    Fsum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
+    F.sum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
+    F.sum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
 ).show()
 
 # |%%--%%| <YONlYHN1nl|n70Kqr5W3f>

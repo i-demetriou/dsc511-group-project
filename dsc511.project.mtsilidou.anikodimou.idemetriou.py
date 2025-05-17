@@ -144,7 +144,7 @@ original_count = original.count()
 print(f'Number of observations: {original_count}')
 print(f'Number of features: {len(original_schema)}')
 
-# |%%--%%| <aXI30QWyU0|tlbRx1U2dk>
+#|%%--%%| <aXI30QWyU0|tlbRx1U2dk>
 r"""°°°
 ### Understanding the dataset
 
@@ -203,13 +203,38 @@ dataset we will:
 
 cleaned = original # Keep a copy of original dataset for comparisons
 
+# |%%--%%| <RazsqhR4nL|c1h4tFpqqS>
+
+# The dataset is very big, and as we progress we would need a way to speed up
+# our computations
+
+def persist(name, df=cleaned):
+    df.persist()
+    df.write.mode("overwrite").parquet(f'./data/checkpoint-{name}')
+
+
+def restore(name):
+    return spark.read.parquet(f'./data/checkpoint-{name}')
+
+#|%%--%%| <c1h4tFpqqS|JeQygB0MxU>
+
+# CHECKPOINT 0
+
+if True:
+    persist('0-original')
+else:
+    cleaned = restore('0-original')
+
+#|%%--%%| <JeQygB0MxU|aR0OWEe2HB>
+
 # Counting nulls in each column
 missing_counts = cleaned.select([F.sum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
 missing_counts.toPandas().T
 
 # There are empty values in the dataset but the are not shown below
 
-# |%%--%%| <RazsqhR4nL|vujMpItqQJ>
+
+# |%%--%%| <aR0OWEe2HB|vujMpItqQJ>
 r"""°°°
 Our dataset contains empty values that are not treated as null. This could be because
 there are empty strings and not null values or they might contain white space
@@ -459,9 +484,9 @@ TL;DR: `make nominatim/build && make nominatim/run`
 °°°"""
 # |%%--%%| <UxoaKRh3gJ|2MTeKTnTdy>
 
-import psycopg2
-
 def get_connection():
+    import psycopg2 # keep it here - problems with python 3.10
+
     try:
         return psycopg2.connect(
             database="nominatim",
@@ -533,7 +558,7 @@ cleaned\
 # |%%--%%| <OaraBoGS4h|p5vYmmArvG>
 
 hotels = cleaned\
-    .select('Hotel_Name', 'Hotel_Address', 'lng', 'lat', 'Average_Score', 'Total_Number_of_Reviews')\
+    .select('Hotel_Name', 'Hotel_Address', 'Average_Score', 'Total_Number_of_Reviews', 'lng', 'lat', 'Country')\
     .distinct()
 
 hotels_df = hotels\
@@ -574,7 +599,17 @@ We notice that the hotels from our dataset come from 6 European cities:
 - Milan, Paris
 - London, United Kingdom
 °°°"""
-# |%%--%%| <n7hAkMqnXu|9QmT8yxq4u>
+#|%%--%%| <n7hAkMqnXu|jpfYZpgpLj>
+
+hotels.groupby('Country').agg(count('*').alias('Number of Hotels')).show()
+cleaned.groupby('Country').agg(count('*').alias('Number of Reviews')).show()
+
+#|%%--%%| <jpfYZpgpLj|NstiWWPoQo>
+r"""°°°
+We notice that the country of origin of the hotels, and reviews for, is inbalanced,
+with the majority of them coming from Great Britain.
+°°°"""
+# |%%--%%| <NstiWWPoQo|9QmT8yxq4u>
 r"""°°°
 We saw before that our dataset consists of the join between "Hotel", "Reviewer" and "Review".
 It is natural to categorize the "keys" of these tables where possible. In particular,
@@ -675,8 +710,11 @@ numerical_features = [
 
 # At this point preprocessing has finished we save our data to parquet
 # We write the DataFrame to parquet to allow us to resume from here to save time
-cleaned.write.mode("overwrite").parquet('./data/Hotel_Reviews')  # no .parquet extension!
-cleaned.persist()
+if True:
+    persist('1-preprocessed')
+else:
+    cleaned = restore('1-preprocessed')
+
 cleaned.summary().show()
 
 # |%%--%%| <zEVV0DtGfh|0Q4IStyLWj>
@@ -720,7 +758,13 @@ class Sampler:
     def milli(self):
         return cleaned.sample(fraction=0.001, withReplacement=False, seed=self.seed)
 
-sampler = Sampler(seed = 42)
+    @property
+    def top_hotels(self):
+        # TODO
+        return cleaned
+
+
+sampler = Sampler()
 
 # |%%--%%| <bXJ9TomOiB|2SKeFmw17q>
 r"""°°°
@@ -1083,7 +1127,7 @@ cleaned = cleaned.withColumn(
         (col("Negative_Tokens_Array")[0] == "not") &
         (col("Negative_Tokens_Array")[1] == "at") &
         (col("Negative_Tokens_Array")[2] == "all"),
-        None  # Set review to null
+        lit(None)
     ).otherwise(col("Negative_Review"))
 ).withColumn(
     "Negative_Tokens_Array",
@@ -1152,7 +1196,7 @@ cleaned = cleaned.withColumn(
     "Negative_Review",
     when(
         array_contains(col("Negative_Tokens_Array"), "nothing") & size(col("Negative_Tokens_Array")).isin(1, 2),
-        None  # Set review to null
+        lit(None)  # Set review to null
     ).otherwise(col("Negative_Review"))
 ).withColumn(
     "Negative_Tokens_Array",
@@ -1303,19 +1347,19 @@ cleaned = cleaned.withColumn(
     "Positive_Review",
     when(
         array_contains(col("Positive_Tokens_Array"), "nothing") & size(col("Positive_Tokens_Array")).isin(1, 2),
-        None  # Set review to null
+        lit(None)
     ).otherwise(col("Positive_Review"))
 ).withColumn(
     "Positive_Tokens_Array",
     when(
         array_contains(col("Positive_Tokens_Array"), "nothing") & size(col("Positive_Tokens_Array")).isin(1, 2),
-        array()  # Set tokens to empty array []
+        array()
     ).otherwise(col("Positive_Tokens_Array"))
 ).withColumn(
     "Positive_Tokens_Count",
     when(
         array_contains(col("Positive_Tokens_Array"), "nothing") & size(col("Positive_Tokens_Array")).isin(1, 2),
-        lit(0)  # Set token count to 0
+        lit(0)
     ).otherwise(col("Positive_Tokens_Count"))
 )
 
@@ -1438,21 +1482,32 @@ nulls_positive_tokens = cleaned.filter(col("Positive_Lemma_Count").isNull()).cou
 print(f"Number of nulls in Negative_Tokens_Count: {nulls_negative_tokens}")
 print(f"Number of nulls in Positive_Tokens_Count: {nulls_positive_tokens}")
 
-# |%%--%%| <xrgqKdTYh6|Oum9GCaeBe>
+#|%%--%%| <xrgqKdTYh6|pEwtRXcAGm>
+
+# End of NLP processing
+
+# CHECKPOINT 2
+
+if True:
+    persist('2-NLP')
+else:
+    restore('2-NLP')
+
+# |%%--%%| <pEwtRXcAGm|Oum9GCaeBe>
 r"""°°°
 ## Graph Analysis
-°°°"""
-# |%%--%%| <Oum9GCaeBe|8q9PiIxrGi>
-r"""°°°
-For the graph analysis we needed to use a unique reviewer id in order to be able to match reviewerx with hotels. Since the dataset didn't provide as with one we decided to create a reviewer id using the features we already had. The ids were create using the following features:
 
-**1. Reviewer_Nationality:** which gives geographic context of the reviewer.
-**2. Tags:** which reflects the type of traveler (e.g., 'Solo', 'Couple').
-**3. Total_Number_of_Reviews_Reviewer_Has_Given:** adds some numeric uniqueness.
+For the graph analysis we needed to use a unique reviewer id in order to be able
+to match reviewerx with hotels. Since the dataset didn't provide as with one we decided
+to create a reviewer id using the features we already had. The ids were create using the following features:
+
+1. **`Reviewer_Nationality`:** which gives geographic context of the reviewer.
+1. **`Tags`:** which reflects the type of traveler (e.g., 'Solo', 'Couple').
+1. **`Total_Number_of_Reviews_Reviewer_Has_Given`:** adds some numeric uniqueness.
 
 Given the features we had available this was the best we could do with creating a unique id for each reviewer. In reality those ids are not truly unique due to collisions are likely to happen in large datasets.
 °°°"""
-# |%%--%%| <8q9PiIxrGi|IPUIpQDUii>
+# |%%--%%| <Oum9GCaeBe|IPUIpQDUii>
 
 df = cleaned.withColumn(
     "reviewer_id",
@@ -1463,7 +1518,7 @@ df = cleaned.withColumn(
     )
 )
 
-# Build edge list: reviewer → hotel
+# Build edge list: reviewer -->hotel
 edge_list = df.select(
     df["reviewer_id"].alias("src"),
     df["Hotel_Name"].alias("dst"),
@@ -1498,8 +1553,9 @@ plot_directed_graph(edge_list, weighted=True)
 
 # |%%--%%| <KiVyyGObA7|chQBgXa4ui>
 r"""°°°
-After implementing graph analysis it was used for the crdation of a recommendetion system that would recommend a hotel to a cutsomer based of the reviews they left usinf their ids.
-
+After implementing graph analysis it was used for a recommendetion system that
+would recommend a hotel to a cutsomer based of the reviews they left using their
+identification fingerprint.
 °°°"""
 # |%%--%%| <chQBgXa4ui|5yOTHGymRT>
 
@@ -1516,60 +1572,59 @@ The following code basically ranks a list of popular hotels by how many people r
 
 hotel_degrees = [(n, gPlot.degree(n)) for n in gPlot.nodes if "Hotel" in n]
 top_hotels = sorted(hotel_degrees, key=lambda x: x[1], reverse=True)[:10]
-print("Top-reviewed hotels:", top_hotels)
-
-# |%%--%%| <990GfH67B3|ubW6lYewpA>
-
-# This need too much time to run so maybe we can just remove it
-
-#from networkx.algorithms import community
-#communities = community.greedy_modularity_communities(gPlot.to_undirected())
-#print("Found", len(communities), "communities")
-
-# |%%--%%| <ubW6lYewpA|FQGlfpfmmM>
-
 top_reviewers = sorted(
     [(n, gPlot.degree(n)) for n in gPlot.nodes if "Hotel" not in n],
     key=lambda x: x[1], reverse=True
 )[:10]
-print("Most active reviewer profiles:", top_reviewers)
 
-# |%%--%%| <FQGlfpfmmM|gQEJtJtSWb>
+print("Top-reviewed hotels:", top_hotels)
+
+# |%%--%%| <990GfH67B3|5s69FeA6Kj>
+# Filtering dataset to get average scores for the top 10 hotels
+avg_scores = df.filter(col('Hotel_Name').isin(list(map(lambda h: h[0], top_hotels))))\
+    .select('Hotel_Name', 'Average_Score')\
+    .distinct()
+
+avg_scores.show()
+
+# |%%--%%| <5s69FeA6Kj|gQEJtJtSWb>
 r"""°°°
 ## Recommendation systems - Collaborative filtering
 °°°"""
 # |%%--%%| <gQEJtJtSWb|VAbRvdJM2C>
 
-# We encode reviewer_id and Hotel_Name to numeric form so ALS can use them
-reviewer_indexer = StringIndexer(inputCol="reviewer_id", outputCol="reviewer_id_index") \
-                    .setHandleInvalid("keep")
-hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index") \
-                 .setHandleInvalid("keep")
+# We encode 'reviewer_id' and 'Hotel_Name' into numeric form
+reviewer_indexer = StringIndexer(inputCol="reviewer_id", outputCol="reviewer_id_index").setHandleInvalid("keep")
+hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index").setHandleInvalid("keep")
 
-# we apply the transformations
+# Applying transformations
 df = reviewer_indexer.fit(df).transform(df)
 df = hotel_indexer.fit(df).transform(df)
 
-# we split the data for training and testing
+# We split the data into training and test sets
 training_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
 
-# we build the ALS model with some basic settings
+print("Training rows:", training_data.count())
+print("Test rows:", test_data.count())
+
+# Building the ALS model
 als = ALS(
     maxIter=10,
     regParam=0.01,
+    rank=10,  # controls latent factor dimensionality
     userCol="reviewer_id_index",
     itemCol="hotel_id_index",
     ratingCol="Reviewer_Score",
-    coldStartStrategy="drop"  # in case we get NaNs during predictions
+    coldStartStrategy="drop"
 )
 
-# we train the model on the training data
+# Training the model
 model = als.fit(training_data)
 
-# we generate top 10 hotel recommendations for each reviewer
+# Generating the top 10 hotel recommendations for each reviewer
 user_recs = model.recommendForAllUsers(10)
 
-# we unpack the recommendation arrays into separate rows
+# We flatten recommendation arrays
 user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
 user_recs = user_recs.selectExpr(
     "reviewer_id_index",
@@ -1577,9 +1632,7 @@ user_recs = user_recs.selectExpr(
     "recommendation.rating as rating"
 )
 
-# we display the results
 user_recs.show(truncate=False)
-
 
 # |%%--%%| <VAbRvdJM2C|ukctSe4eLo>
 r"""°°°
@@ -1590,7 +1643,7 @@ r"""°°°
 predictions = model.transform(test_data)
 evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
 rmse = evaluator.evaluate(predictions)
-print("Root-mean-square error = " + str(rmse))
+print(f"Root-mean-square error = {rmse}")
 
 # |%%--%%| <HdKZi6peTR|IU0PXroUNz>
 r"""°°°
@@ -1618,34 +1671,22 @@ and the complexity of some models.
 **Therefore, cross-validation may be applied in future steps, particularly for
 models with longer training times or in order to further optimize performance.**
 °°°"""
-# |%%--%%| <IU0PXroUNz|rqsdRAB5vc>
+# |%%--%%| <IU0PXroUNz|VJHsPqhjH1>
 r"""°°°
-Here we are creating a reduced version of the dataset by selecting the hotels
-that have the most reviews, until we reach around 50,000 total rows.
-
-First, we count how many reviews each hotel has and then we sort them in descending order.
+Fist we aggregate the numerical columns over each hotel in the dataset to calculate
+the averages.
 °°°"""
-# |%%--%%| <rqsdRAB5vc|3imDaC4fKJ>
+# |%%--%%| <VJHsPqhjH1|3imDaC4fKJ>
 r"""°°°
-The main reason we created this reduced dataset is that some machine learning algorithms
-take too much time to run on the full dataset. So, in order to speed up the process,
-we decided to keep only the hotels with the most reviews until we reach around 50,000 rows.
+To overcome the computational performance issue, we will work from a sample,
+and performing selective sampling, i.e. intelligently choosing how to sample.
 
-We know that selecting hotels based on the number of reviews is a convenient approach
-and not always realistic in practice, but it helps us develop and test our models
-more efficiently during the early stages.
+Our approach was to keep only hotels with the most reviews. We know that selecting
+hotels based on the number of reviews is a convenient approach and not always
+realistic in practice, but it helps us develop and test our models more efficiently
+during the early stages.
 °°°"""
-# |%%--%%| <3imDaC4fKJ|LaMoOFatBm>
-
-# Number of rows
-num_rows = cleaned.count()
-
-# Number of columns
-num_cols = len(cleaned.columns)
-
-print(f"The Spark DataFrame 'cleaned' has {num_rows} rows and {num_cols} columns.")
-
-# |%%--%%| <LaMoOFatBm|8gCj4NDX6l>
+# |%%--%%| <3imDaC4fKJ|8gCj4NDX6l>
 
 # Group by hotel and count reviews
 hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
@@ -1672,22 +1713,16 @@ for row in hotel_list:
 # Filter Spark DataFrame for these top hotels
 clean_reduced_hotels_most_reviews = cleaned.filter(col("Hotel_Name").isin(selected_hotels))
 
-# |%%--%%| <8gCj4NDX6l|WfQT23le4J>
+#|%%--%%| <8gCj4NDX6l|F7V2ON37hb>
 
-num_rows = clean_reduced_hotels_most_reviews.count()
-num_cols = len(clean_reduced_hotels_most_reviews.columns)
+print(f'Using a sample of {clean_reduced_hotels_most_reviews.count()} / {cleaned.count()}')
 
-print(f"Filtered DataFrame has {num_rows} rows and {num_cols} columns.")
-
-# |%%--%%| <WfQT23le4J|VJHsPqhjH1>
+#|%%--%%| <F7V2ON37hb|KXNCzP7yWT>
 r"""°°°
-Great — you want to create a new dataset that, for each hotel, contains the average values of selected numerical columns from your full dataset cleaned.
-
-
-Step-by-step goal:
-From cleaned, compute average values per hotel for the following columns:
+Now we aggregate the numerical columns over each hotel in the dataset to calculate
+the averages.
 °°°"""
-# |%%--%%| <VJHsPqhjH1|H7lElUOPvP>
+# |%%--%%| <KXNCzP7yWT|H7lElUOPvP>
 
 # Defining columns on which we will compute averages
 columns_to_average = [
@@ -1720,25 +1755,15 @@ hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30
 
 hotel_avg_stats_filtered.show(truncate=False)
 
-# |%%--%%| <H7lElUOPvP|Z7RIuqMDf5>
+# |%%--%%| <H7lElUOPvP|WfQT23le4J>
+
+print(f'Using a sample of {hotel_avg_stats_filtered.count()} / {cleaned.count()}')
+
+# |%%--%%| <WfQT23le4J|Z7RIuqMDf5>
 
 hotel_avg_stats_filtered.count()
 
-# |%%--%%| <Z7RIuqMDf5|BoBFDdWuyz>
-
-# Print hotels that have missing coordinates
-hotel_avg_stats_filtered.filter("avg_lat IS NULL OR avg_lng IS NULL").select("Hotel_Name", "avg_lat", "avg_lng").show(truncate=False)
-
-# |%%--%%| <BoBFDdWuyz|CIA8rY4wOM>
-
-# Remove those hotels from the dataset
-hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
-
-# |%%--%%| <CIA8rY4wOM|4WfTgyBsQi>
-
-print(f"Final number of hotels (after removing those with missing lat/lng): {hotel_avg_stats_filtered.count()}")
-
-# |%%--%%| <4WfTgyBsQi|zvErLKhQ7Q>
+# |%%--%%| <Z7RIuqMDf5|zvErLKhQ7Q>
 r"""°°°
 Here we build a regression model to predict the average hotel review score based
 on aggregated features derived from user reviews.
@@ -1750,7 +1775,7 @@ Using these cleaned and aggregated values, we assemble a feature vector for each
 hotel and train a linear regression model to estimate the average review score.
 
 The dataset is split into training and testing sets, and we evaluate the model's
-performance using RMSE and R² metrics to assess prediction accuracy and fit quality.
+performance using RMSE and $R2$ metrics to assess prediction accuracy and fit quality.
 °°°"""
 # |%%--%%| <zvErLKhQ7Q|pTdIftyoNj>
 r"""°°°
@@ -1766,10 +1791,7 @@ hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"
 hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
 hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
 
-# Removing hotels with null lat/lng
-hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
-
-# Next we assembl features
+# Assemble features
 feature_cols = [
     'avg_Additional_Number_of_Scoring',
     'avg_Total_Number_of_Reviews',
@@ -2224,7 +2246,7 @@ This helps the model learn both:
 
 Individual words like "clean", "rude", "broken"
 
-Phrases like "no towels", "was broken
+Phrases like "no towels", "was broken"
 °°°"""
 # |%%--%%| <ebP0fb0s7B|xnyKLz1bcD>
 
@@ -3013,12 +3035,10 @@ kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
 model = kmeans.fit(review_cluster_input)
 review_clusters = model.transform(review_cluster_input)
 
-# |%%--%%| <ZmKW4rmrao|iRZczPnXlk>
+# |%%--%%| <ZmKW4rmrao|JuK6hBYpRM>
 r"""°°°
-# Limitations
-°°°"""
-# |%%--%%| <iRZczPnXlk|JuK6hBYpRM>
-r"""°°°
+## Limitations
+
 Our dataset was overall well structured but stil difficult to manage due to the following issues:
 
 1. Missing/Incomplete Data: We had many missing values and many more that needed to be converted null since tey were causing bias (fake nulls, presence of positive reviews in 'Negative_Reviews' etc).
@@ -3028,13 +3048,11 @@ Our dataset was overall well structured but stil difficult to manage due to the 
 °°°"""
 # |%%--%%| <JuK6hBYpRM|P9Jgd42MVD>
 r"""°°°
-# Conclusion
+## Conclusion
 
-TODO
-°°°"""
-# |%%--%%| <P9Jgd42MVD|CntxDTXioY>
-r"""°°°
-In conclusion, the hotel review dataset provides useful insights into guest experiences and satisfaction. The findings can help inform service improvements and decision-making in the hospitality sector.
+In conclusion, the hotel review dataset provides useful insights into guest experiences
+and satisfaction. The findings can help inform service improvements and
+decision-making in the hospitality sector.
 
 The most significant conclusions were following:
 
@@ -3044,3 +3062,7 @@ The most significant conclusions were following:
 2. Linear Regression performs best among Random Forest and GBT, since it has the lowest RMSE (0.3766) and the highest R² (0.4892). LR captures the underlying patterns in your aggregated dataset more effectively than the tree-based models.
 3. Surpisinlgy Random Forest and GBT perform slightly worse, with higher RMSE and lower R²
 °°°"""
+#|%%--%%| <P9Jgd42MVD|8cqIDP3czc>
+
+# Goodbye
+spark.stop()

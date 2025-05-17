@@ -207,7 +207,7 @@ cleaned = original # Keep a copy of original dataset for comparisons
 missing_counts = cleaned.select([F.sum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
 missing_counts.toPandas().T
 
-# There are empty values in the dataset but the are not shown here
+# There are empty values in the dataset but the are not shown below
 
 # |%%--%%| <RazsqhR4nL|vujMpItqQJ>
 r"""°°°
@@ -237,9 +237,9 @@ Empty strings is not the only "not-null" null values a string can have.
 In many datasets missing values can be represented as 'NA' (a string) instead of null.
 Spark won’t treat 'NA' as a missing value unless we explicitly handle it.
 So if we're only checking for null, we might miss those 'not-null nulls'.
-This is why we need to check each column for the presence of 'not-null nulls'.
+This is why we need to check each column for the presence of 'not-null' nulls.
 
-The following code-snippet counts the "not-null" nulls in our dataset.
+The following code-snippet counts the 'not-null' nulls in our dataset.
 °°°"""
 # |%%--%%| <Fx6ByHdnPj|PjPGq2ZxvB>
 
@@ -259,7 +259,7 @@ for column in cleaned.columns:
 # Display the result
 spark.createDataFrame(not_null_nulls, ["column", "not_null_nulls"]).show(truncate=False)
 
-#|%%--%%| <PjPGq2ZxvB|307mjsRf0U>
+# |%%--%%| <PjPGq2ZxvB|307mjsRf0U>
 
 cleaned = cleaned\
     .withColumn(
@@ -290,7 +290,7 @@ Further processing of the reviews will take place in the NLP section.
 °°°"""
 # |%%--%%| <FxQWFGyIAc|pIgUIBKBkB>
 
-# According to the dataset, no positive / negative reviews are expressed as 'No Positive' / 'No Negative'
+# According to the dataset, the absence of positive / negative reviews is expressed as 'No Positive' / 'No Negative'
 cleaned = cleaned\
     .withColumn(
         'Negative_Review',
@@ -365,9 +365,9 @@ cleaned\
 
 # |%%--%%| <HY8O5B35Gh|Njn6irCxDv>
 r"""°°°
-The `Hotel_Address` seems to have no missing data. We do this by testing if the
+The `Hotel_Address` seems to have no missing data. We conclude this by testing if the
 length of the string is less than a reasonable address size and if there is any
-`None` values
+`None` values.
 °°°"""
 # |%%--%%| <Njn6irCxDv|qd5ZgtWmHM>
 
@@ -577,7 +577,7 @@ We notice that the hotels from our dataset come from 6 European cities:
 # |%%--%%| <n7hAkMqnXu|9QmT8yxq4u>
 r"""°°°
 We saw before that our dataset consists of the join between "Hotel", "Reviewer" and "Review".
-It is natural to catagorize the "keys" of these tables where possible. In particular,
+It is natural to categorize the "keys" of these tables where possible. In particular,
 the natural categorizations are:
 
 - `Reviewer_Nationality`
@@ -649,6 +649,7 @@ consise information about the hotel. We will explore it later in the NLP section
 Here we add numerical a numerical variable capturing the number of tags of each review.
 °°°"""
 # |%%--%%| <dS1WWraI0O|KUm4HIVfoT>
+
 cleaned = cleaned.withColumn(
     "Num_Tags",
     when(length("Tags") <= 2, 0).otherwise(
@@ -719,7 +720,7 @@ class Sampler:
     def milli(self):
         return cleaned.sample(fraction=0.001, withReplacement=False, seed=self.seed)
 
-sampler = Sampler(cleaned)
+sampler = Sampler(seed = 42)
 
 # |%%--%%| <bXJ9TomOiB|2SKeFmw17q>
 r"""°°°
@@ -728,14 +729,7 @@ r"""°°°
 We will now visualize our dataset using a subset of the dataset. By the law of
 large numbers it would capture the variability of the complete dataset.
 °°°"""
-# |%%--%%| <2SKeFmw17q|8s0ON3p77R>
-
-sample_pandas = sampler.deci.select(numerical_features).toPandas()
-
-print('[Sample] Numerical features description:')
-sample_pandas[numerical_features].describe()
-
-# |%%--%%| <8s0ON3p77R|oK3XVDh8L6>
+# |%%--%%| <2SKeFmw17q|oK3XVDh8L6>
 r"""°°°
 #### Checking for skewness in the target variable
 °°°"""
@@ -762,11 +756,7 @@ plt.gca().spines['right'].set_visible(False)
 
 plt.show()
 
-# |%%--%%| <7CK6jtBJao|8iyvgUKxJb>
-
-cleaned.select(skewness("Average_Score")).show()
-
-# |%%--%%| <8iyvgUKxJb|fO2FC94gOl>
+# |%%--%%| <7CK6jtBJao|fO2FC94gOl>
 r"""°°°
 From the statistical summary we saw that the mean of the 'Average_Score' is close to 8.4
 and from the plot we can see that our target variable is slightly skewed to the left.
@@ -782,7 +772,11 @@ cleaned.select(skewness("Average_Score")).show()
 r"""°°°
 #### Scatterplots
 °°°"""
-# |%%--%%| <rJJN3svbzP|1j0Mf2i6Uu>
+# |%%--%%| <rJJN3svbzP|DqwyzUKK8j>
+
+sample_pandas = sampler.deci.toPandas()
+
+# |%%--%%| <DqwyzUKK8j|1j0Mf2i6Uu>
 
 sns.set_style("white")
 sns.set_palette("coolwarm")
@@ -942,7 +936,7 @@ cleaned.select(
     "Review_Total_Negative_Word_Counts",
 ).show(5)
 
-#|%%--%%| <dm895YhSA2|E8SKhTONiM>
+# |%%--%%| <dm895YhSA2|E8SKhTONiM>
 
 cleaned.select(
     "Positive_Review",
@@ -1016,7 +1010,7 @@ cleaned\
 
 # |%%--%%| <FkVnokKkcy|2jGIi2Ffwj>
 r"""°°°
-#### 1.5.2 Text Cleanup
+#### Text Cleanup
 °°°"""
 # |%%--%%| <2jGIi2Ffwj|sZFpIoNkbh>
 
@@ -1448,7 +1442,17 @@ print(f"Number of nulls in Positive_Tokens_Count: {nulls_positive_tokens}")
 r"""°°°
 ## Graph Analysis
 °°°"""
-# |%%--%%| <Oum9GCaeBe|IPUIpQDUii>
+# |%%--%%| <Oum9GCaeBe|8q9PiIxrGi>
+r"""°°°
+For the graph analysis we needed to use a unique reviewer id in order to be able to match reviewerx with hotels. Since the dataset didn't provide as with one we decided to create a reviewer id using the features we already had. The ids were create using the following features:
+
+**1. Reviewer_Nationality:** which gives geographic context of the reviewer.
+**2. Tags:** which reflects the type of traveler (e.g., 'Solo', 'Couple').
+**3. Total_Number_of_Reviews_Reviewer_Has_Given:** adds some numeric uniqueness.
+
+Given the features we had available this was the best we could do with creating a unique id for each reviewer. In reality those ids are not truly unique due to collisions are likely to happen in large datasets.
+°°°"""
+# |%%--%%| <8q9PiIxrGi|IPUIpQDUii>
 
 df = cleaned.withColumn(
     "reviewer_id",
@@ -1494,16 +1498,8 @@ plot_directed_graph(edge_list, weighted=True)
 
 # |%%--%%| <KiVyyGObA7|chQBgXa4ui>
 r"""°°°
-Bipartite Graph: Reviewers ↔ Hotels
-Nodes:
-- One set = Reviewers (can be uniquely identified by reviewer + nationality, or anonymized ID)
-- Other set = Hotels
-- Edges: A review (with edge attributes like score, date, sentiment, tags, etc.)\
+After implementing graph analysis it was used for the crdation of a recommendetion system that would recommend a hotel to a cutsomer based of the reviews they left usinf their ids.
 
-Use cases:
-- Collaborative filtering for recommendations (like "reviewers similar to you liked...")
-- Identify highly connected hotels (most reviewed or diverse set of reviewers)
-- Detect reviewer communities or suspicious review patterns (e.g., cliques)
 °°°"""
 # |%%--%%| <chQBgXa4ui|5yOTHGymRT>
 
@@ -1693,7 +1689,7 @@ From cleaned, compute average values per hotel for the following columns:
 °°°"""
 # |%%--%%| <VJHsPqhjH1|H7lElUOPvP>
 
-# Step 1: Define columns to compute averages on
+# Defining columns on which we will compute averages
 columns_to_average = [
     'Additional_Number_of_Scoring',
     'Average_Score',
@@ -1707,22 +1703,21 @@ columns_to_average = [
     'Negative_Lemma_Count'
 ]
 
-# Step 2: Build aggregation expressions
+# Building aggregation expressions
 agg_exprs = [avg(col(column_name)).alias(f"avg_{column_name}") for column_name in columns_to_average]
 
-# Step 3: Group by hotel and compute averages
+# Grouping by hotel and compute averages
 hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
 
-# Step 4: Compute review counts per hotel
+# Computing review counts per hotel
 hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
 
-# Step 5: Join the two DataFrames on Hotel_Name
+# Now we are joining the two DataFrames on Hotel_Name
 hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
 
-# Step 6: Filter for hotels with more than 30 reviews
+# Filtering for hotels with more than 30 reviews
 hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
 
-# Step 7: Show final result
 hotel_avg_stats_filtered.show(truncate=False)
 
 # |%%--%%| <H7lElUOPvP|Z7RIuqMDf5>
@@ -1760,36 +1755,21 @@ performance using RMSE and R² metrics to assess prediction accuracy and fit qua
 # |%%--%%| <zvErLKhQ7Q|pTdIftyoNj>
 r"""°°°
 The below code has to do with model
-
 °°°"""
 # |%%--%%| <pTdIftyoNj|3Z5sOUKiog>
-
-# Step 1: Compute averages per hotel
-columns_to_average = [
-    'Additional_Number_of_Scoring',
-    'Average_Score',
-    'Total_Number_of_Reviews',
-    'Total_Number_of_Reviews_Reviewer_Has_Given',
-    'days_since_review',
-    'lat',
-    'lng',
-    'Num_Tags',
-    'Positive_Lemma_Count',
-    'Negative_Lemma_Count'
-]
 
 agg_exprs = [avg(col).alias(f"avg_{col}") for col in columns_to_average]
 hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
 
-# Step 2: Add review count and filter hotels with > 30 reviews
+# Adding the review count and filtering hotels with > 30 reviews
 hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
 hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
 hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
 
-# Step 3: Remove hotels with null lat/lng
+# Removing hotels with null lat/lng
 hotel_avg_stats_filtered = hotel_avg_stats_filtered.filter("avg_lat IS NOT NULL AND avg_lng IS NOT NULL")
 
-# Step 4: Assemble features
+# Next we assembl features
 feature_cols = [
     'avg_Additional_Number_of_Scoring',
     'avg_Total_Number_of_Reviews',
@@ -1805,20 +1785,20 @@ feature_cols = [
 assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
 assembled_data = assembler.transform(hotel_avg_stats_filtered)
 
-# Step 5: Prepare final dataset with label
+# Preparing the final dataset with label
 final_data = assembled_data.select("features", col("avg_Average_Score").alias("label"))
 
-# Step 6: Train-test split
+# Splitting the dataset into train and test
 train_data, test_data = final_data.randomSplit([0.8, 0.2], seed=42)
 
-# Step 7: Train linear regression model
+# Training linear regression model
 lr = LinearRegression(featuresCol="features", labelCol="label")
 lr_model = lr.fit(train_data)
 
-# Step 8: Make predictions on test set
+# Making predictions on test set
 predictions = lr_model.transform(test_data)
 
-# Step 9: Evaluate model
+# Evaluating the model
 evaluator = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
 rmse = evaluator.evaluate(predictions)
 
@@ -1844,20 +1824,20 @@ from reviews or location-based attributes.
 °°°"""
 # |%%--%%| <m9dNiI3CYg|ClJqCyXkeW>
 
-# first we define the models we want to try out, all using the same features and label
+# First we define the models we want to try out, all using the same features and label
 models = {
     "Linear Regression": LinearRegression(featuresCol="features", labelCol="label"),
     "Random Forest": RandomForestRegressor(featuresCol="features", labelCol="label", numTrees=100),
     "Gradient Boosted Trees": GBTRegressor(featuresCol="features", labelCol="label", maxIter=100)
 }
 
-# now we set up the evaluators — one for RMSE and one for R²
+# Now we set up the evaluators — one for RMSE and one for R²
 evaluator_rmse = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
 evaluator_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
 
 results = []
 
-# here we loop through the models, fit them, predict, and evaluate
+# Here we loop through the models, fit them, predict, and evaluate
 for name, model in models.items():
     fitted = model.fit(train_data)               # we train the model
     preds = fitted.transform(test_data)          # then make predictions on the test set
@@ -1867,10 +1847,9 @@ for name, model in models.items():
 
     results.append((name, rmse, r2))             # save the results
 
-# finally we print out the results in a clean format
+# Finally we print out the results in a clean format
 for name, rmse, r2 in results:
     print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
-
 
 # |%%--%%| <ClJqCyXkeW|xSz2CoAVG9>
 r"""°°°
@@ -1893,7 +1872,6 @@ r"""°°°
 We saved the predictions only for the last model (Gradient Boosted Trees)
 and plotted actual vs. predicted values to visually evaluate its performance.
 The red dashed line shows where perfect predictions would fall.
-
 °°°"""
 # |%%--%%| <G6BwWnXd2Z|AnhMxJ9ZKD>
 
@@ -1964,15 +1942,15 @@ print(f"Rows with null or empty lemmatized tokens: {null_or_empty.count()}")
 
 # |%%--%%| <n70Kqr5W3f|tDv252WCnZ>
 
-# Count rows where Negative_Lemmatized is an empty array
+# Counting rows where Negative_Lemmatized is an empty array
 empty_negative = clean_reduced_hotels_most_reviews.filter(size(col("Negative_Lemmatized")) == 0).count()
 print(f"Rows with empty Negative_Lemmatized: {empty_negative}")
 
-# Count rows where Positive_Lemmatized is an empty array
+# Counting rows where Positive_Lemmatized is an empty array
 empty_positive = clean_reduced_hotels_most_reviews.filter(size(col("Positive_Lemmatized")) == 0).count()
 print(f"Rows with empty Positive_Lemmatized: {empty_positive}")
 
-# Optional: Count rows where both are empty
+# Counting rows where both are empty
 both_empty = clean_reduced_hotels_most_reviews.filter(
     (size(col("Negative_Lemmatized")) == 0) & (size(col("Positive_Lemmatized")) == 0)
 ).count()
@@ -2049,7 +2027,6 @@ print(f"AUC on test set: {auc}")
 
 # just take a quick look at a few predictions
 predictions.select("lemmatized_tokens", "label", "prediction").show(5, truncate=False)
-
 
 # |%%--%%| <yGsu1hj3qw|MqHNgbibMm>
 
@@ -2329,8 +2306,6 @@ evaluation_summary = """
 # we display the table in markdown format
 display(Markdown(evaluation_summary))
 
-
-
 # |%%--%%| <Ji4G61nylx|fFaPXfITTh>
 r"""°°°
 Confusion Matrix
@@ -2597,7 +2572,64 @@ the multiple classes.
 Overall, Logistic Regression appears to be the most suitable model for this dataset
 in its current form.
 °°°"""
-# |%%--%%| <YABItIzOfP|BPobcFcYEq>
+# |%%--%%| <YABItIzOfP|nL5VKW4SVF>
+r"""°°°
+### Review categorization:
+°°°"""
+# |%%--%%| <nL5VKW4SVF|oHqZSz3Iee>
+
+# Defining complaint categories
+complaint_categories = {
+    "cleanliness": ["dirty", "unclean", "smelly", "stained", "filthy"],
+    "staff": ["rude", "unfriendly", "unhelpful", "impolite", "hostile"],
+    "noise": ["noisy", "loud", "couldn't sleep", "thin walls"],
+    "facilities": ["broken", "out of order", "no air conditioning", "wifi didn’t work"],
+    "discrimination": ["racist", "sexist", "discrimination", "bias"],
+    "food": ["bad food", "tasteless", "cold food", "poor breakfast"],
+    "billing": ["overcharged", "extra charge", "billing issue", "hidden fee"]
+}
+
+# Defining the UDF
+from pyspark.sql.functions import udf, col
+from pyspark.sql.types import ArrayType, StringType
+
+def categorize_complaint(text):
+    import re
+    if not text:
+        return ["other"]
+    text = text.lower()
+    matches = []
+    for category, keywords in complaint_categories.items():
+        for kw in keywords:
+            if re.search(r"\b" + re.escape(kw) + r"\b", text):
+                matches.append(category)
+                break
+    return list(set(matches)) if matches else ["other"]
+
+categorize_udf = udf(categorize_complaint, ArrayType(StringType()))
+
+# Then insert this after cleaning:
+df = df.withColumn("complaint_categories", categorize_udf(col("negative_review")))
+
+# |%%--%%| <oHqZSz3Iee|dKXDRFEZwI>
+r"""°°°
+We can also use this group analysis to answer: 'How many complaints of each type are reported for each star rating?'
+°°°"""
+# |%%--%%| <dKXDRFEZwI|NAl9ruwiQJ>
+
+from pyspark.sql.functions import explode, col
+
+# Turn list of complaints into individual rows
+df = df.withColumn('category', explode(col('complaint_categories')))
+
+# Group by star rating and complaint category
+complaint_counts = df.groupBy('star_rating', 'category').count()
+
+# View top complaints per star rating
+complaint_counts.orderBy('hotel_stars', 'count', ascending=False).show()
+
+
+# |%%--%%| <NAl9ruwiQJ|BPobcFcYEq>
 r"""°°°
 ### Clustering
 °°°"""
@@ -2980,9 +3012,35 @@ cleaned.select("Reviewer_Score").filter("Reviewer_Score is not null").show()
 kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
 model = kmeans.fit(review_cluster_input)
 review_clusters = model.transform(review_cluster_input)
-#|%%--%%| <ZmKW4rmrao|P9Jgd42MVD>
+
+# |%%--%%| <ZmKW4rmrao|iRZczPnXlk>
+r"""°°°
+# Limitations
+°°°"""
+# |%%--%%| <iRZczPnXlk|JuK6hBYpRM>
+r"""°°°
+Our dataset was overall well structured but stil difficult to manage due to the following issues:
+
+1. Missing/Incomplete Data: We had many missing values and many more that needed to be converted null since tey were causing bias (fake nulls, presence of positive reviews in 'Negative_Reviews' etc).
+2. Inconsistent Formats: longtitude and lattiude were writen as string.
+3. Unstructured Text: Free-form reviews ands comments that were rich in information but hard to analyze without natural language processing (NLP).
+4. Large Volume: The dataset required special processing tools to be analyzed efficiently.
+°°°"""
+# |%%--%%| <JuK6hBYpRM|P9Jgd42MVD>
 r"""°°°
 # Conclusion
 
 TODO
+°°°"""
+# |%%--%%| <P9Jgd42MVD|CntxDTXioY>
+r"""°°°
+In conclusion, the hotel review dataset provides useful insights into guest experiences and satisfaction. The findings can help inform service improvements and decision-making in the hospitality sector.
+
+The most significant conclusions were following:
+
+1. We couldn't filter out all the possible reviews that could lead to false predictions so we still have some bias in our results.
+2. In graph analysis the top 5 most reviewed hotels were: 'Strand Palace Hotel'(2525), 'Copthorne Tara Hotel London Kensington'(2231), 'Britannia International Hotel Canary Wharf'(2112) and 'Hotel Da Vinci' (1783) and 'Millennium Gloucester Hotel London' (1650).
+
+2. Linear Regression performs best among Random Forest and GBT, since it has the lowest RMSE (0.3766) and the highest R² (0.4892). LR captures the underlying patterns in your aggregated dataset more effectively than the tree-based models.
+3. Surpisinlgy Random Forest and GBT perform slightly worse, with higher RMSE and lower R²
 °°°"""

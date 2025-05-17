@@ -1731,15 +1731,13 @@ columns_to_average = [
     'Total_Number_of_Reviews',
     'Total_Number_of_Reviews_Reviewer_Has_Given',
     'days_since_review',
-    'lat',
-    'lng',
     'Num_Tags',
     'Positive_Lemma_Count',
     'Negative_Lemma_Count'
 ]
 
 # Building aggregation expressions
-agg_exprs = [avg(col(column_name)).alias(f"avg_{column_name}") for column_name in columns_to_average]
+agg_exprs = [avg(col(feat)).alias(f"avg_{feat}") for feat in columns_to_average]
 
 # Grouping by hotel and compute averages
 hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
@@ -1797,11 +1795,10 @@ feature_cols = [
     'avg_Total_Number_of_Reviews',
     'avg_Total_Number_of_Reviews_Reviewer_Has_Given',
     'avg_days_since_review',
-    'avg_lat',
-    'avg_lng',
     'avg_Num_Tags',
     'avg_Positive_Lemma_Count',
-    'avg_Negative_Lemma_Count'
+    'avg_Negative_Lemma_Count',
+    'Country_Encoded',
 ]
 
 assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")

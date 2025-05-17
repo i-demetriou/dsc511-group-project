@@ -1,11 +1,12 @@
 folium
 matplotlib
 mlflow
+nbconvert
 networkx
 nltk
 notebook
 pandas
-psycopg2
+# psycopg2 # Misbehaves with python 3.10
 pyspark
 scikit-learn
 seaborn

@@ -2326,8 +2326,6 @@ feature_columns = [
     "avg_Total_Number_of_Reviews",
     "avg_Total_Number_of_Reviews_Reviewer_Has_Given",
     "avg_days_since_review",
-    "avg_lat",
-    "avg_lng",
     "avg_Num_Tags",
     "avg_Positive_Lemma_Count",
     "avg_Negative_Lemma_Count",

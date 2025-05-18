@@ -1601,8 +1601,10 @@ hotel_indexer = StringIndexer(inputCol="Hotel_Name", outputCol="hotel_id_index")
 df = reviewer_indexer.fit(df).transform(df)
 df = hotel_indexer.fit(df).transform(df)
 
+collab_sample = df.sample(fraction=0.01, withReplacement=False, seed=42)
+
 # We split the data into training and test sets
-training_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+training_data, test_data = collab_sample.randomSplit([0.8, 0.2], seed=42)
 
 print("Training rows:", training_data.count())
 print("Test rows:", test_data.count())

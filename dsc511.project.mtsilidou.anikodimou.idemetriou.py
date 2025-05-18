@@ -15,31 +15,7 @@ offering insights into hotel quality, customer satisfaction, and areas of improv
 data collection, aggregation and processing techniques we seek to formulate and answer
 questions related to hotel ratings, customer sentiment, and prediction modeling.
 °°°"""
-# |%%--%%| <3TXSJ6triW|CB2Tvqi47w>
-r"""°°°
-TODO LIST
-
-- EDA (Exploratory Data Analysis)
-- Περισσότερα γραφήματα για κείμενα (π.χ. κατανομές tokens, μέσος όρος λέξεων ανά κείμενο)
-- Plots με αριθμό tokens, κατανομή, μέσους όρους κτλ.
-- Machine Learning / NLP tasks
-- Χρήση περισσότερων αλγορίθμων για ταξινόμηση κειμένου.
-- Επεξεργασία κειμένου:
-- Lemmatization + Tokenization: εύρεση ποια tokens εμφανίζονται πιο συχνά.
-- Classification of Reviews:
-- Δοκιμή σε υπάρχοντα reviews αν τα ταξινομεί σωστά ως θετικά ή αρνητικά.
-- Δημιουργία δικών μας reviews και δοκιμή ταξινόμησης (π.χ. με χρήση KNN βάσει tokens).
-- Bias Analysis
-- Έλεγχος για bias στα δεδομένα ή στο μοντέλο (π.χ. imbalance στα labels).
-- Scaling / Preprocessing
-- Δοκιμή scalers (π.χ. MaxMinScaler) σε NLP χαρακτηριστικά (όπως TF-IDF values).
-- Recommendation System
-- Ανάπτυξη Hybrid Recommendation System:
-- Συνδυασμός content-based και collaborative filtering μεθόδων.
-- Να γίνει προσεκτική και σωστή υλοποίηση.
- - Clarify how we plan to interpret the `Additional_Number_of_Scoring` variable.
-°°°"""
-# |%%--%%| <CB2Tvqi47w|IdP6yJ3P5X>
+# |%%--%%| <3TXSJ6triW|IdP6yJ3P5X>
 
 # Importing libraries
 
@@ -2944,34 +2920,44 @@ kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
 model = kmeans.fit(review_cluster_input)
 review_clusters = model.transform(review_cluster_input)
 
-# |%%--%%| <EFgy58S9uF|JuK6hBYpRM>
-r"""°°°
-## Limitations
-
-Our dataset was overall well structured but stil difficult to manage due to the following issues:
-
-1. Missing/Incomplete Data: We had many missing values and many more that needed to be converted null since tey were causing bias (fake nulls, presence of positive reviews in 'Negative_Reviews' etc).
-2. Inconsistent Formats: longtitude and lattiude were writen as string.
-3. Unstructured Text: Free-form reviews ands comments that were rich in information but hard to analyze without natural language processing (NLP).
-4. Large Volume: The dataset required special processing tools to be analyzed efficiently.
-°°°"""
-# |%%--%%| <JuK6hBYpRM|P9Jgd42MVD>
+#|%%--%%| <EFgy58S9uF|AZwkWXSYnD>
 r"""°°°
 ## Conclusion
 
-In conclusion, the hotel review dataset provides useful insights into guest experiences
-and satisfaction. The findings can help inform service improvements and
-decision-making in the hospitality sector.
+This report has analysed the "515k Hotel Reviews Data in Europe" dataset, which
+exhibited a generally structured format. However there was some issue with correctly
+marking missing data in hotel coordinates, and in particular of interest in the
+positive and negative reviews, which needed to be mitigated before further analysis.
+Furthermore, a systematic inconsistency was detected in the suplementary
+review metrics, and instead recalculated them.
 
-The most significant conclusions were following:
+The dataset contained a substantial volume of unstructured textual data in the form
+of guest reviews split it positive and negative, along with "tags". This was analyzed using
+natural language processing (NLP) techniques.
 
-1. We couldn't filter out all the possible reviews that could lead to false predictions so we still have some bias in our results.
-2. In graph analysis the top 5 most reviewed hotels were: 'Strand Palace Hotel'(2525), 'Copthorne Tara Hotel London Kensington'(2231), 'Britannia International Hotel Canary Wharf'(2112) and 'Hotel Da Vinci' (1783) and 'Millennium Gloucester Hotel London' (1650).
+The big data volume of data was addressed by taking samples from the main dataset,
+and in some cases opting to favor hotels with more reviews in hope to reach more rich
+conclusions. This was due to compuational restrictions from our part.
 
-2. Linear Regression performs best among Random Forest and GBT, since it has the lowest RMSE (0.3766) and the highest R² (0.4892). LR captures the underlying patterns in your aggregated dataset more effectively than the tree-based models.
-3. Surpisinlgy Random Forest and GBT perform slightly worse, with higher RMSE and lower R²
+The analysis of this dataset yielded the following key findings:
+
+1.  Despite rigorous preprocessing efforts, the complete elimination of all potential
+    reviews capable of introducing predictive bias remained a challenge.
+    Consequently, a degree of inherent bias may persist within the analytical results.
+2.  Graph-based analysis of review frequency identified the following five hotels as
+    receiving the highest number of reviews: 'Strand Palace Hotel' (n=2525), 'Copthorne Tara Hotel London Kensington' (n=2231), 'Britannia International Hotel Canary Wharf' (n=2112), 'Hotel Da Vinci' (n=1783), and 'Millennium Gloucester Hotel London' (n=1650).
+3.  Among the evaluated regression models (Linear Regression, Random Forest, and Gradient Boosted Trees),
+    Linear Regression demonstrated the superior performance metrics on this aggregated dataset,
+    achieving the lowest Root Mean Squared Error (RMSE = 0.3766) and the highest coefficient of determination (R² = 0.4892).
+    This suggests that Linear Regression more effectively captured the underlying linear relationships present in the aggregated features.
+4.  Counterintuitively, the tree-based models, Random Forest and Gradient Boosted Trees,
+    exhibited slightly inferior performance compared to Linear Regression, characterized
+    by higher RMSE and lower R² values. This outcome may indicate that the non-linear modeling
+    capabilities of these algorithms did not provide a significant advantage on the specific
+    patterns present in the aggregated data.
+
 °°°"""
-# |%%--%%| <P9Jgd42MVD|8cqIDP3czc>
+# |%%--%%| <AZwkWXSYnD|8cqIDP3czc>
 
 # Goodbye
 spark.stop()

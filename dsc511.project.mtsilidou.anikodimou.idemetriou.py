@@ -144,7 +144,7 @@ original_count = original.count()
 print(f'Number of observations: {original_count}')
 print(f'Number of features: {len(original_schema)}')
 
-#|%%--%%| <aXI30QWyU0|tlbRx1U2dk>
+# |%%--%%| <aXI30QWyU0|tlbRx1U2dk>
 r"""°°°
 ### Understanding the dataset
 
@@ -216,7 +216,7 @@ def persist(name, df=cleaned):
 def restore(name):
     return spark.read.parquet(f'./data/checkpoint-{name}')
 
-#|%%--%%| <c1h4tFpqqS|JeQygB0MxU>
+# |%%--%%| <c1h4tFpqqS|JeQygB0MxU>
 
 # CHECKPOINT 0
 
@@ -225,14 +225,13 @@ if True:
 else:
     cleaned = restore('0-original')
 
-#|%%--%%| <JeQygB0MxU|aR0OWEe2HB>
+# |%%--%%| <JeQygB0MxU|aR0OWEe2HB>
 
 # Counting nulls in each column
 missing_counts = cleaned.select([F.sum(col(c).isNull().cast("int")).alias(c) for c in cleaned.columns])
 missing_counts.toPandas().T
 
 # There are empty values in the dataset but the are not shown below
-
 
 # |%%--%%| <aR0OWEe2HB|vujMpItqQJ>
 r"""°°°
@@ -539,8 +538,10 @@ cleaned = cleaned\
     .withColumn('Country', extract_country('Hotel_Address'))
 
 # StringIndexer that safely handles nulls and unseen labels
-country_indexer = StringIndexer(inputCol='Country', outputCol='Country_Encoded') \
-                    .setHandleInvalid("keep")
+country_indexer = StringIndexer(
+    inputCol='Country',
+    outputCol='Country_Encoded'
+).setHandleInvalid("keep")
 
 # Fit and transform
 cleaned = country_indexer.fit(cleaned).transform(cleaned)
@@ -558,7 +559,7 @@ cleaned\
 # |%%--%%| <OaraBoGS4h|p5vYmmArvG>
 
 hotels = cleaned\
-    .select('Hotel_Name', 'Hotel_Address', 'Average_Score', 'Total_Number_of_Reviews', 'lng', 'lat', 'Country')\
+    .select('Hotel_Name', 'Hotel_Address', 'Average_Score', 'Total_Number_of_Reviews', 'lng', 'lat', 'Country', 'Country_Encoded')\
     .distinct()
 
 hotels_df = hotels\
@@ -599,12 +600,12 @@ We notice that the hotels from our dataset come from 6 European cities:
 - Milan, Paris
 - London, United Kingdom
 °°°"""
-#|%%--%%| <n7hAkMqnXu|jpfYZpgpLj>
+# |%%--%%| <n7hAkMqnXu|jpfYZpgpLj>
 
 hotels.groupby('Country').agg(count('*').alias('Number of Hotels')).show()
 cleaned.groupby('Country').agg(count('*').alias('Number of Reviews')).show()
 
-#|%%--%%| <jpfYZpgpLj|NstiWWPoQo>
+# |%%--%%| <jpfYZpgpLj|NstiWWPoQo>
 r"""°°°
 We notice that the country of origin of the hotels, and reviews for, is inbalanced,
 with the majority of them coming from Great Britain.
@@ -704,7 +705,6 @@ numerical_features = [
     'Total_Number_of_Reviews',
     'Num_Tags',
     'Total_Number_of_Reviews_Reviewer_Has_Given']
-
 
 # |%%--%%| <SyzxrAi7I5|zEVV0DtGfh>
 
@@ -1473,25 +1473,27 @@ print(f"Number of nulls in Negative_Tokens_Count: {negative_nulls}")
 
 # |%%--%%| <8WoTy5DiSZ|xrgqKdTYh6>
 
-# Count nulls in Negative_Tokens_Count
+# checking how many nulls we’ve got in the negative lemma count
 nulls_negative_tokens = cleaned.filter(col("Negative_Lemma_Count").isNull()).count()
 
-# Count nulls in Positive_Tokens_Count
+# same for the positive lemma count
 nulls_positive_tokens = cleaned.filter(col("Positive_Lemma_Count").isNull()).count()
 
-print(f"Number of nulls in Negative_Tokens_Count: {nulls_negative_tokens}")
-print(f"Number of nulls in Positive_Tokens_Count: {nulls_positive_tokens}")
+# printing out the results just to see what's missing
+print(f"Number of nulls in Negative_Lemma_Count: {nulls_negative_tokens}")
+print(f"Number of nulls in Positive_Lemma_Count: {nulls_positive_tokens}")
 
-#|%%--%%| <xrgqKdTYh6|pEwtRXcAGm>
+
+# |%%--%%| <xrgqKdTYh6|pEwtRXcAGm>
 
 # End of NLP processing
 
-# CHECKPOINT 2
+# CHECKPOINT 1
 
 if True:
-    persist('2-NLP')
+    persist('1-NLP')
 else:
-    restore('2-NLP')
+    restore('1-NLP')
 
 # |%%--%%| <pEwtRXcAGm|Oum9GCaeBe>
 r"""°°°
@@ -1580,6 +1582,7 @@ top_reviewers = sorted(
 print("Top-reviewed hotels:", top_hotels)
 
 # |%%--%%| <990GfH67B3|5s69FeA6Kj>
+
 # Filtering dataset to get average scores for the top 10 hotels
 avg_scores = df.filter(col('Hotel_Name').isin(list(map(lambda h: h[0], top_hotels))))\
     .select('Hotel_Name', 'Average_Score')\
@@ -1603,38 +1606,38 @@ df = hotel_indexer.fit(df).transform(df)
 
 collab_sample = df.sample(fraction=0.01, withReplacement=False, seed=42)
 
-# We split the data into training and test sets
-training_data, test_data = collab_sample.randomSplit([0.8, 0.2], seed=42)
+# # We split the data into training and test sets
+# training_data, test_data = collab_sample.randomSplit([0.8, 0.2], seed=42)
 
-print("Training rows:", training_data.count())
-print("Test rows:", test_data.count())
+# print("Training rows:", training_data.count())
+# print("Test rows:", test_data.count())
 
 # Building the ALS model
-als = ALS(
-    maxIter=10,
-    regParam=0.01,
-    rank=10,  # controls latent factor dimensionality
-    userCol="reviewer_id_index",
-    itemCol="hotel_id_index",
-    ratingCol="Reviewer_Score",
-    coldStartStrategy="drop"
-)
+# als = ALS(
+#     maxIter=10,
+#     regParam=0.01,
+#     rank=10,  # controls latent factor dimensionality
+#     userCol="reviewer_id_index",
+#     itemCol="hotel_id_index",
+#     ratingCol="Reviewer_Score",
+#     coldStartStrategy="drop"
+# )
 
-# Training the model
-model = als.fit(training_data)
+# # Training the model
+# model = als.fit(training_data)
 
-# Generating the top 10 hotel recommendations for each reviewer
-user_recs = model.recommendForAllUsers(10)
+# # Generating the top 10 hotel recommendations for each reviewer
+# user_recs = model.recommendForAllUsers(10)
 
-# We flatten recommendation arrays
-user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
-user_recs = user_recs.selectExpr(
-    "reviewer_id_index",
-    "recommendation.hotel_id_index as hotel_id_index",
-    "recommendation.rating as rating"
-)
+# # We flatten recommendation arrays
+# user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
+# user_recs = user_recs.selectExpr(
+#     "reviewer_id_index",
+#     "recommendation.hotel_id_index as hotel_id_index",
+#     "recommendation.rating as rating"
+# )
 
-user_recs.show(truncate=False)
+# user_recs.show(truncate=False)
 
 # |%%--%%| <VAbRvdJM2C|ukctSe4eLo>
 r"""°°°
@@ -1642,12 +1645,21 @@ r"""°°°
 °°°"""
 # |%%--%%| <ukctSe4eLo|HdKZi6peTR>
 
-predictions = model.transform(test_data)
-evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
-rmse = evaluator.evaluate(predictions)
-print(f"Root-mean-square error = {rmse}")
+# predictions = model.transform(test_data)
+# evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
+# rmse = evaluator.evaluate(predictions)
+# print(f"Root-mean-square error = {rmse}")
 
-# |%%--%%| <HdKZi6peTR|IU0PXroUNz>
+# |%%--%%| <HdKZi6peTR|P4vwjrbNus>
+
+# CHECKPOINT 2
+
+if True:
+    persist('2-graph')
+else:
+    cleaned = restore('2-graph')
+
+# |%%--%%| <P4vwjrbNus|IU0PXroUNz>
 r"""°°°
 ## Machine Learning
 
@@ -1715,11 +1727,11 @@ for row in hotel_list:
 # Filter Spark DataFrame for these top hotels
 clean_reduced_hotels_most_reviews = cleaned.filter(col("Hotel_Name").isin(selected_hotels))
 
-#|%%--%%| <8gCj4NDX6l|F7V2ON37hb>
+# |%%--%%| <8gCj4NDX6l|F7V2ON37hb>
 
 print(f'Using a sample of {clean_reduced_hotels_most_reviews.count()} / {cleaned.count()}')
 
-#|%%--%%| <F7V2ON37hb|KXNCzP7yWT>
+# |%%--%%| <F7V2ON37hb|KXNCzP7yWT>
 r"""°°°
 Now we aggregate the numerical columns over each hotel in the dataset to calculate
 the averages.
@@ -1742,28 +1754,26 @@ columns_to_average = [
 agg_exprs = [avg(col(feat)).alias(f"avg_{feat}") for feat in columns_to_average]
 
 # Grouping by hotel and compute averages
-hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
+hotel_avg_stats = cleaned\
+    .groupBy("Hotel_Name")\
+    .agg(*agg_exprs)
 
 # Computing review counts per hotel
-hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
+hotel_counts = cleaned\
+    .groupBy("Hotel_Name")\
+    .agg(count("*").alias("review_count"))
 
 # Now we are joining the two DataFrames on Hotel_Name
 hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
 
 # Filtering for hotels with more than 30 reviews
-hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
-
-hotel_avg_stats_filtered.show(truncate=False)
-
-# |%%--%%| <H7lElUOPvP|WfQT23le4J>
+hotel_avg_stats_filtered = hotel_avg_stats_with_counts\
+    .filter("review_count > 30")\
+    .join(hotels, on="Hotel_Name")
 
 print(f'Using a sample of {hotel_avg_stats_filtered.count()} / {cleaned.count()}')
 
-# |%%--%%| <WfQT23le4J|Z7RIuqMDf5>
-
-hotel_avg_stats_filtered.count()
-
-# |%%--%%| <Z7RIuqMDf5|zvErLKhQ7Q>
+# |%%--%%| <H7lElUOPvP|zvErLKhQ7Q>
 r"""°°°
 Here we build a regression model to predict the average hotel review score based
 on aggregated features derived from user reviews.
@@ -1777,19 +1787,7 @@ hotel and train a linear regression model to estimate the average review score.
 The dataset is split into training and testing sets, and we evaluate the model's
 performance using RMSE and $R2$ metrics to assess prediction accuracy and fit quality.
 °°°"""
-# |%%--%%| <zvErLKhQ7Q|pTdIftyoNj>
-r"""°°°
-The below code has to do with model
-°°°"""
-# |%%--%%| <pTdIftyoNj|3Z5sOUKiog>
-
-agg_exprs = [avg(col).alias(f"avg_{col}") for col in columns_to_average]
-hotel_avg_stats = cleaned.groupBy("Hotel_Name").agg(*agg_exprs)
-
-# Adding the review count and filtering hotels with > 30 reviews
-hotel_counts = cleaned.groupBy("Hotel_Name").agg(count("*").alias("review_count"))
-hotel_avg_stats_with_counts = hotel_avg_stats.join(hotel_counts, on="Hotel_Name")
-hotel_avg_stats_filtered = hotel_avg_stats_with_counts.filter("review_count > 30")
+# |%%--%%| <zvErLKhQ7Q|3Z5sOUKiog>
 
 # Assemble features
 feature_cols = [
@@ -1857,19 +1855,21 @@ evaluator_rmse = RegressionEvaluator(labelCol="label", predictionCol="prediction
 evaluator_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
 
 results = []
+fits = []
 
 # Here we loop through the models, fit them, predict, and evaluate
 for name, model in models.items():
     fitted = model.fit(train_data)               # we train the model
     preds = fitted.transform(test_data)          # then make predictions on the test set
 
-    rmse = evaluator_rmse.evaluate(preds)        # calculate RMSE
-    r2 = evaluator_r2.evaluate(preds)            # calculate R²
+    rmse = evaluator_rmse.evaluate(preds)
+    r2 = evaluator_r2.evaluate(preds)
 
-    results.append((name, rmse, r2))             # save the results
+    fits.append((name, fitted))
+    results.append((name, rmse, r2, preds))
 
 # Finally we print out the results in a clean format
-for name, rmse, r2 in results:
+for name, rmse, r2, preds in results:
     print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
 
 # |%%--%%| <ClJqCyXkeW|xSz2CoAVG9>
@@ -1897,42 +1897,28 @@ The red dashed line shows where perfect predictions would fall.
 # |%%--%%| <G6BwWnXd2Z|AnhMxJ9ZKD>
 
 # we convert the predictions and labels to a pandas DataFrame so we can plot them easily
-pdf = preds.select("prediction", "label").toPandas()
+for name, rmse, r2, preds in results:
+    pdf = preds.select("prediction", "label").toPandas()
 
-# we make a scatter plot of actual vs. predicted values
-plt.scatter(pdf["label"], pdf["prediction"], alpha=0.3)
+    # we make a scatter plot of actual vs. predicted values
+    plt.scatter(pdf["label"], pdf["prediction"], alpha=0.3)
 
-# we add a red line to show the ideal case where predicted = actual
-plt.plot([pdf["label"].min(), pdf["label"].max()],
-         [pdf["label"].min(), pdf["label"].max()],
-         color='red')
+    # we add a red line to show the ideal case where predicted = actual
+    plt.plot([pdf["label"].min(), pdf["label"].max()],
+             [pdf["label"].min(), pdf["label"].max()],
+             color='red')
 
-# basic plot labels and title
-plt.xlabel("Actual")
-plt.ylabel("Predicted")
-plt.title(f"{name} - Actual vs. Predicted")
+    # basic plot labels and title
+    plt.xlabel("Actual")
+    plt.ylabel("Predicted")
+    plt.title(f"{name} - Actual vs. Predicted")
 
-# show the plot
-plt.show()
+    # show the plot
+    plt.show()
 
 # |%%--%%| <AnhMxJ9ZKD|2TTB16kUvs>
 
-if hasattr(fitted, "featureImportances"):
-    importances = fitted.featureImportances
-    print(f"{name} feature importances:\n{importances}")
-
-# |%%--%%| <2TTB16kUvs|c87jEHyoOL>
-
-for name, model in models.items():
-    fitted = model.fit(train_data)
-    preds = fitted.transform(test_data)
-
-    rmse = evaluator_rmse.evaluate(preds)
-    r2 = evaluator_r2.evaluate(preds)
-
-    print(f"{name} - RMSE: {rmse:.4f}, R²: {r2:.4f}")
-
-    # Feature importances (for tree-based models)
+for name, fitted in fits:
     if hasattr(fitted, "featureImportances"):
         importances = fitted.featureImportances
         importance_list = importances.toArray()
@@ -1941,43 +1927,11 @@ for name, model in models.items():
         for feat, score in zip(feature_cols, importance_list):
             print(f"  {feat}: {score:.4f}")
 
-# |%%--%%| <c87jEHyoOL|D5gaXvQ8M3>
+# |%%--%%| <2TTB16kUvs|D5gaXvQ8M3>
 r"""°°°
 ### Model 3
 °°°"""
-# |%%--%%| <D5gaXvQ8M3|YONlYHN1nl>
-
-clean_reduced_hotels_most_reviews.select(
-    F.sum(col("Negative_Lemmatized").isNull().cast("int")).alias("null_Negative_Lemmatized"),
-    F.sum(col("Positive_Lemmatized").isNull().cast("int")).alias("null_Positive_Lemmatized")
-).show()
-
-# |%%--%%| <YONlYHN1nl|n70Kqr5W3f>
-
-null_or_empty = clean_reduced_hotels_most_reviews.filter(
-    col("Negative_Lemmatized").isNull() | (size(col("Negative_Lemmatized")) == 0) |
-    col("Positive_Lemmatized").isNull() | (size(col("Positive_Lemmatized")) == 0)
-)
-
-print(f"Rows with null or empty lemmatized tokens: {null_or_empty.count()}")
-
-# |%%--%%| <n70Kqr5W3f|tDv252WCnZ>
-
-# Counting rows where Negative_Lemmatized is an empty array
-empty_negative = clean_reduced_hotels_most_reviews.filter(size(col("Negative_Lemmatized")) == 0).count()
-print(f"Rows with empty Negative_Lemmatized: {empty_negative}")
-
-# Counting rows where Positive_Lemmatized is an empty array
-empty_positive = clean_reduced_hotels_most_reviews.filter(size(col("Positive_Lemmatized")) == 0).count()
-print(f"Rows with empty Positive_Lemmatized: {empty_positive}")
-
-# Counting rows where both are empty
-both_empty = clean_reduced_hotels_most_reviews.filter(
-    (size(col("Negative_Lemmatized")) == 0) & (size(col("Positive_Lemmatized")) == 0)
-).count()
-print(f"Rows where BOTH are empty: {both_empty}")
-
-# |%%--%%| <tDv252WCnZ|SM0g9e6CTn>
+# |%%--%%| <D5gaXvQ8M3|SM0g9e6CTn>
 r"""°°°
 In this approach, we aimed to separate the positive and negative components of each
 hotel review so they could be treated as independent training samples.
@@ -1994,111 +1948,76 @@ and IDF for feature extraction and training a logistic regression model.
 Finally, we evaluated the model’s performance using the AUC metric to assess its
 ability to distinguish between positive and negative sentiment.
 °°°"""
-# |%%--%%| <SM0g9e6CTn|yGsu1hj3qw>
+# |%%--%%| <SM0g9e6CTn|aqjwVB9Jgz>
 
-# we keep only the rows where we actually have some lemmatized tokens (positive or negative)
-df = clean_reduced_hotels_most_reviews.filter(
-    (size(col("Positive_Lemmatized")) > 0) | (size(col("Negative_Lemmatized")) > 0)
-)
-
-# here we build a new DataFrame for the positive reviews
-# we also assign label = 1 to mark them as positive
-positive_df = df.filter(size(col("Positive_Lemmatized")) > 0) \
-    .withColumn("lemmatized_tokens", col("Positive_Lemmatized")) \
-    .withColumn("label", lit(1)) \
-    .select("lemmatized_tokens", "label")
-
-# same logic here for the negative reviews, just with label = 0
-negative_df = df.filter(size(col("Negative_Lemmatized")) > 0) \
-    .withColumn("lemmatized_tokens", col("Negative_Lemmatized")) \
-    .withColumn("label", lit(0)) \
-    .select("lemmatized_tokens", "label")
-
-# we merge both datasets into one
-df = positive_df.union(negative_df)
-
-# we keep only the useful columns for model training
-df = df.select("lemmatized_tokens", "label")
-
-# now we set up our pipeline:
-# 1. HashingTF turns tokens into a fixed-length vector
-# 2. IDF scales the features
-# 3. Logistic Regression is our classifier
-hashing_tf = HashingTF(inputCol="lemmatized_tokens", outputCol="raw_features", numFeatures=10000)
-idf = IDF(inputCol="raw_features", outputCol="features")
-lr = LogisticRegression(featuresCol="features", labelCol="label")
-
-pipeline = Pipeline(stages=[hashing_tf, idf, lr])
-
-# we split the data into train and test sets
-train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
-
-# now we train the whole pipeline
-model = pipeline.fit(train_data)
-
-# make predictions on the test set
-predictions = model.transform(test_data)
-
-# evaluate the performance using AUC
-evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
-auc = evaluator.evaluate(predictions)
-
-# print the AUC to see how well we did
-print(f"AUC on test set: {auc}")
-
-# just take a quick look at a few predictions
-predictions.select("lemmatized_tokens", "label", "prediction").show(5, truncate=False)
-
-# |%%--%%| <yGsu1hj3qw|MqHNgbibMm>
-
-df.groupBy("label").count().show()
-
-# |%%--%%| <MqHNgbibMm|aqjwVB9Jgz>
-
-# Prepare positive and negative samples
-
-# Filter non-empty reviews
+# We keep the positive reviews that actually say something (not just "no positive")
 pos_df = clean_reduced_hotels_most_reviews.filter(lower(col("Positive_Review")) != "no positive") \
     .withColumn("text", col("Positive_Review")) \
     .withColumn("label", lit(1)) \
     .select("text", "label")
 
+# We do the same for the negative reviews (we skip the ones that just say "no negative")
 neg_df = clean_reduced_hotels_most_reviews.filter(lower(col("Negative_Review")) != "no negative") \
     .withColumn("text", col("Negative_Review")) \
     .withColumn("label", lit(0)) \
     .select("text", "label")
 
-# Combine both into a single DataFrame
+# We put the positive and negative reviews together in one dataset
 df = pos_df.union(neg_df)
 
-# Define the text processing pipeline
-tokenizer = Tokenizer(inputCol="text", outputCol="tokens")
-remover = StopWordsRemover(inputCol="tokens", outputCol="filtered_tokens")
-hashing_tf = HashingTF(inputCol="filtered_tokens", outputCol="raw_features", numFeatures=10000)
-idf = IDF(inputCol="raw_features", outputCol="features")
-lr = LogisticRegression(featuresCol="features", labelCol="label")
+# We now set up the text processing steps
+tokenizer = Tokenizer(inputCol="text", outputCol="tokens")  # we split the text into words
+remover = StopWordsRemover(inputCol="tokens", outputCol="filtered_tokens")  # we remove common stopwords
+hashing_tf = HashingTF(inputCol="filtered_tokens", outputCol="raw_features", numFeatures=10000)  # we turn words into numbers
+idf = IDF(inputCol="raw_features", outputCol="features")  # we scale the word frequencies
+lr = LogisticRegression(featuresCol="features", labelCol="label")  # we define the classifier
 
+# We combine all steps into one pipeline
 pipeline = Pipeline(stages=[tokenizer, remover, hashing_tf, idf, lr])
 
-# Split into training and test sets
+# We split the data into training and testing sets (80% train, 20% test)
 train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
 
-# Train the model
+# We train the model on the training data
 model = pipeline.fit(train_data)
 
-# Evaluate
+# We make predictions on the test set
 predictions = model.transform(test_data)
+
+# We evaluate the model using AUC (Area Under the Curve)
 evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
 auc = evaluator.evaluate(predictions)
 
+# We print out the AUC score to see how well the model performs
 print(f"AUC on test set: {auc}")
 
-# Show some predictions
+# We show a few example predictions
 predictions.select("text", "label", "prediction").show(5, truncate=False)
 
-# |%%--%%| <aqjwVB9Jgz|9Uz0Pf2XHz>
 
-# TODO: Why are we adding new text? Justify and maybe add to new section
+# |%%--%%| <aqjwVB9Jgz|uA9sRaTdvu>
+r"""°°°
+Here we’re building a basic sentiment classifier using the actual review text. First, we filter out the reviews that just say “no positive” or “no negative” since they don’t contain any useful information for training. Then we label the positive ones as 1 and the negative ones as 0. After that, we combine them into one dataset and pass everything through a pipeline: we tokenize the text (split it into words), remove common stopwords (like "the", "and", "is"), convert the tokens into numerical features using HashingTF, scale those features with IDF, and finally train a logistic regression model. We split the data into train and test sets, train the model, and evaluate its performance using AUC — and the results show that it performs really well.
+
+
+°°°"""
+# |%%--%%| <uA9sRaTdvu|ZGGC22Y2eg>
+r"""°°°
+Since we faced some delays and issues with the previous approach that used preprocessed columns (like the ones with lemmatized tokens), and because we were working with smaller samples for our machine learning models, we decided to build a completely new pipeline.
+°°°"""
+# |%%--%%| <ZGGC22Y2eg|JtIpyq7c3G>
+r"""°°°
+<br><br>
+°°°"""
+# |%%--%%| <JtIpyq7c3G|ayEzXgytrD>
+r"""°°°
+We add new example reviews here to see how the trained model performs on fresh, unseen input, just like it would in a real-world application. These reviews are not part of the original training or test set — they’re meant to simulate realistic customer feedback that users might write. The first review describes a positive experience with helpful staff and a clean room, while the second clearly reflects a negative experience due to delays and a dirty bathroom. By checking how the model responds to these examples, we verify that it generalizes well beyond the training data, ensure that it correctly classifies common topics like staff behavior or room cleanliness, and evaluate its potential for use in real-time systems. This kind of testing is especially useful when preparing the model for deployment in streaming analysis scenarios, where new reviews arrive continuously and need to be classified on the fly.
+In the code below, we add these two reviews and pass them through the trained pipeline to see the model’s predictions.
+
+
+°°°"""
+# |%%--%%| <ayEzXgytrD|9Uz0Pf2XHz>
+
 
 new_texts = [
     "The staff was incredibly helpful and the room was very clean.",
@@ -2135,7 +2054,11 @@ print(f"False Negatives: {fn}")
 # |%%--%%| <VbzISKUhvt|g8uWWcQwG4>
 
 for metric in ["accuracy", "f1", "weightedPrecision", "weightedRecall"]:
-    evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName=metric)
+    evaluator = MulticlassClassificationEvaluator(
+        labelCol="label",
+        predictionCol="prediction",
+        metricName=metric
+    )
     print(f"{metric.capitalize()}: {evaluator.evaluate(predictions):.4f}")
 
 # |%%--%%| <g8uWWcQwG4|VM26DAxIIO>
@@ -2240,12 +2163,8 @@ df.groupBy("label").count().orderBy("label").show()
 
 # |%%--%%| <17zBQx2G7x|ebP0fb0s7B>
 r"""°°°
-Option 1: Combine unigrams + bigrams
-This helps the model learn both:
-
-Individual words like "clean", "rude", "broken"
-
-Phrases like "no towels", "was broken"
+We now combine unigrams with bi-grams. This will help the model to learn both
+individual words like "clean", "rude", "broken", and phrases like "no towels", "was broken"
 °°°"""
 # |%%--%%| <ebP0fb0s7B|xnyKLz1bcD>
 
@@ -2366,7 +2285,13 @@ new_predictions.select("text", "prediction", "probability").show(truncate=False)
 r"""°°°
 ### MODEL 4
 °°°"""
-# |%%--%%| <nbVznwKLeF|3uiZzflio8>
+# |%%--%%| <nbVznwKLeF|ibGVThtLeJ>
+r"""°°°
+In this part of the notebook, we build a classification model to predict hotel quality levels using numerical features derived from customer reviews. Instead of working with raw review text, we use aggregated statistics like average score, number of tags, positive and negative lemma counts, and more. We create a new column called star_rating, where we map the average score of each hotel to a 1–5 star scale. This helps simplify the problem and turn it into a multi-class classification task. We then train a Random Forest classifier using this star rating as the target and the review-related statistics as features. After training, we evaluate the model by comparing the predicted ratings with the actual ones. An alternative approach instead of labeling hotels with star ratings could be to group them based on customer satisfaction levels (for example: low, medium, and high satisfaction), which might give us more flexibility and better align with the way customers actually perceive their experience.
+
+
+°°°"""
+# |%%--%%| <ibGVThtLeJ|3uiZzflio8>
 
 hotel_avg_stats_filtered.show()
 
@@ -2648,7 +2573,6 @@ complaint_counts = df.groupBy('star_rating', 'category').count()
 
 # View top complaints per star rating
 complaint_counts.orderBy('hotel_stars', 'count', ascending=False).show()
-
 
 # |%%--%%| <NAl9ruwiQJ|BPobcFcYEq>
 r"""°°°
@@ -3061,7 +2985,7 @@ The most significant conclusions were following:
 2. Linear Regression performs best among Random Forest and GBT, since it has the lowest RMSE (0.3766) and the highest R² (0.4892). LR captures the underlying patterns in your aggregated dataset more effectively than the tree-based models.
 3. Surpisinlgy Random Forest and GBT perform slightly worse, with higher RMSE and lower R²
 °°°"""
-#|%%--%%| <P9Jgd42MVD|8cqIDP3czc>
+# |%%--%%| <P9Jgd42MVD|8cqIDP3czc>
 
 # Goodbye
 spark.stop()

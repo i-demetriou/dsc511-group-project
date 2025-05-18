@@ -1483,7 +1483,6 @@ nulls_positive_tokens = cleaned.filter(col("Positive_Lemma_Count").isNull()).cou
 print(f"Number of nulls in Negative_Lemma_Count: {nulls_negative_tokens}")
 print(f"Number of nulls in Positive_Lemma_Count: {nulls_positive_tokens}")
 
-
 # |%%--%%| <xrgqKdTYh6|pEwtRXcAGm>
 
 # End of NLP processing
@@ -1994,12 +1993,9 @@ print(f"AUC on test set: {auc}")
 # We show a few example predictions
 predictions.select("text", "label", "prediction").show(5, truncate=False)
 
-
 # |%%--%%| <aqjwVB9Jgz|uA9sRaTdvu>
 r"""°°°
 Here we’re building a basic sentiment classifier using the actual review text. First, we filter out the reviews that just say “no positive” or “no negative” since they don’t contain any useful information for training. Then we label the positive ones as 1 and the negative ones as 0. After that, we combine them into one dataset and pass everything through a pipeline: we tokenize the text (split it into words), remove common stopwords (like "the", "and", "is"), convert the tokens into numerical features using HashingTF, scale those features with IDF, and finally train a logistic regression model. We split the data into train and test sets, train the model, and evaluate its performance using AUC — and the results show that it performs really well.
-
-
 °°°"""
 # |%%--%%| <uA9sRaTdvu|ZGGC22Y2eg>
 r"""°°°
@@ -2013,11 +2009,8 @@ r"""°°°
 r"""°°°
 We add new example reviews here to see how the trained model performs on fresh, unseen input, just like it would in a real-world application. These reviews are not part of the original training or test set — they’re meant to simulate realistic customer feedback that users might write. The first review describes a positive experience with helpful staff and a clean room, while the second clearly reflects a negative experience due to delays and a dirty bathroom. By checking how the model responds to these examples, we verify that it generalizes well beyond the training data, ensure that it correctly classifies common topics like staff behavior or room cleanliness, and evaluate its potential for use in real-time systems. This kind of testing is especially useful when preparing the model for deployment in streaming analysis scenarios, where new reviews arrive continuously and need to be classified on the fly.
 In the code below, we add these two reviews and pass them through the trained pipeline to see the model’s predictions.
-
-
 °°°"""
 # |%%--%%| <ayEzXgytrD|9Uz0Pf2XHz>
-
 
 new_texts = [
     "The staff was incredibly helpful and the room was very clean.",
@@ -2288,8 +2281,6 @@ r"""°°°
 # |%%--%%| <nbVznwKLeF|ibGVThtLeJ>
 r"""°°°
 In this part of the notebook, we build a classification model to predict hotel quality levels using numerical features derived from customer reviews. Instead of working with raw review text, we use aggregated statistics like average score, number of tags, positive and negative lemma counts, and more. We create a new column called star_rating, where we map the average score of each hotel to a 1–5 star scale. This helps simplify the problem and turn it into a multi-class classification task. We then train a Random Forest classifier using this star rating as the target and the review-related statistics as features. After training, we evaluate the model by comparing the predicted ratings with the actual ones. An alternative approach instead of labeling hotels with star ratings could be to group them based on customer satisfaction levels (for example: low, medium, and high satisfaction), which might give us more flexibility and better align with the way customers actually perceive their experience.
-
-
 °°°"""
 # |%%--%%| <ibGVThtLeJ|3uiZzflio8>
 
@@ -2576,23 +2567,23 @@ complaint_counts.orderBy('hotel_stars', 'count', ascending=False).show()
 r"""°°°
 ### Clustering
 °°°"""
-# |%%--%%| <BPobcFcYEq|5eH4Uuc3mp>
+# |%%--%%| <BPobcFcYEq|ND7nbBWISt>
 
 hotel_with_stars.count()
 
-# |%%--%%| <5eH4Uuc3mp|zoR4nfvP09>
+# |%%--%%| <ND7nbBWISt|7PvzrkC49i>
 
 hotel_with_stars.show()
 
-# |%%--%%| <zoR4nfvP09|aMRY6jJmCl>
+# |%%--%%| <7PvzrkC49i|NDh7yikp43>
 
 cleaned.count()
 
-# |%%--%%| <aMRY6jJmCl|hTRO7TWZzm>
+# |%%--%%| <NDh7yikp43|4UlhoJsl18>
 
 cleaned.show()
 
-# |%%--%%| <hTRO7TWZzm|KG23VMTBxr>
+# |%%--%%| <4UlhoJsl18|KG23VMTBxr>
 r"""°°°
 Here we use K-Means clustering to group hotels based on review-related features
 such as average score, sentiment counts, and review activity.
@@ -2676,7 +2667,7 @@ We use the Within Set Sum of Squared Errors (WSS) to evaluate each model and loo
 for the point where the error stops dropping significantly — that helps us decide
 the optimal number of clusters.
 °°°"""
-# |%%--%%| <eiu5JQOrho|FYUMpnW8jQ>
+# |%%--%%| <eiu5JQOrho|INjqi0IqNt>
 
 # we test different values for k to find the best number of clusters
 for k in range(2, 9):
@@ -2685,7 +2676,7 @@ for k in range(2, 9):
     wss = model.summary.trainingCost
     print(f"k = {k}, Within Set Sum of Squared Errors = {wss:.2f}")
 
-# |%%--%%| <FYUMpnW8jQ|wMnvczLujK>
+# |%%--%%| <INjqi0IqNt|wMnvczLujK>
 r"""°°°
 We tested different values of k and saw that the WSS drops significantly until
 around k = 4 or 5, suggesting that these are good options for clustering.
@@ -2697,12 +2688,10 @@ in our classification models.**
 °°°"""
 # |%%--%%| <wMnvczLujK|60BRUd77Pt>
 r"""°°°
-TODO: Mention elbow method on plot to vizualize WDD drop as k increased
-
-Since we saw that k = 4 offers a good balance between model simplicity and error
+Using the elbow rule we select $k = 4$ offers a good balance between model simplicity and error
 reduction, we use this value to apply KMeans clustering on the hotel datas
 °°°"""
-# |%%--%%| <60BRUd77Pt|gHoosfaUqm>
+# |%%--%%| <60BRUd77Pt|93zuWeE7WE>
 
 # We start by selecting the features that we believe best represent hotel review behavior
 selected_features = [
@@ -2729,7 +2718,7 @@ clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rat
 # We also compute the average of each feature per cluster to understand what characterizes each group
 clustered.groupBy("cluster").agg({col: "mean" for col in selected_features}).show()
 
-# |%%--%%| <gHoosfaUqm|Q9IQ6xO9EV>
+# |%%--%%| <93zuWeE7WE|Q9IQ6xO9EV>
 r"""°°°
 Our clustering results show that Cluster 0 is the largest and most diverse,
 mainly composed of 4- and 5-star hotels, suggesting it's the core group of
@@ -2743,7 +2732,7 @@ a niche or lower-activity group.
 
 Overall, the clusters align reasonably well with hotel star ratings.
 °°°"""
-# |%%--%%| <Q9IQ6xO9EV|nrERleJIa9>
+# |%%--%%| <Q9IQ6xO9EV|yaNR0oXARL>
 
 pca = PCA(k=2, inputCol="features", outputCol="pca_features")
 pca_model = pca.fit(cluster_input)
@@ -2767,7 +2756,7 @@ plt.xlabel("PC1")
 plt.ylabel("PC2")
 plt.show()
 
-# |%%--%%| <nrERleJIa9|SxxfBBHiBf>
+# |%%--%%| <yaNR0oXARL|SxxfBBHiBf>
 r"""°°°
 In this step, we use the ClusteringEvaluator to calculate the Silhouette Score,
 which helps us assess the quality of our clusters.
@@ -2776,13 +2765,13 @@ We set the evaluator to use squared Euclidean distance and apply it to our clust
 The resulting score tells us how well each hotel fits within its assigned cluster,
 and a higher value indicates better-defined and more separated clusters.
 °°°"""
-# |%%--%%| <SxxfBBHiBf|6UlTOKG6lj>
+# |%%--%%| <SxxfBBHiBf|4GaUCaNVvA>
 
 evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
 silhouette = evaluator.evaluate(clustered)
 print(f"Silhouette Score: {silhouette:.3f}")
 
-# |%%--%%| <6UlTOKG6lj|K9vIMtZs6c>
+# |%%--%%| <4GaUCaNVvA|K9vIMtZs6c>
 r"""°°°
 To assess the quality of our clustering, we calculated the `Silhouette Score`,
 which ranges from **-1 to 1**:
@@ -2809,11 +2798,11 @@ bkm = BisectingKMeans(featuresCol="features", predictionCol="cluster", k=4)
 bkm_model = bkm.fit(cluster_input)
 bkm_clustered = bkm_model.transform(cluster_input)
 
-# |%%--%%| <RKE6GTdtC5|DAA5ZWbkpJ>
+# |%%--%%| <RKE6GTdtC5|UD2dT15xey>
 
 bkm_clustered.groupBy("cluster", "star_rating").count().orderBy("cluster", "star_rating").show()
 
-# |%%--%%| <DAA5ZWbkpJ|KfkITEpYC4>
+# |%%--%%| <UD2dT15xey|KfkITEpYC4>
 r"""°°°
 In this analysis, we grouped hotel reviews into four clusters and examined the
 distribution of star ratings (3, 4, and 5 stars) within each cluster.
@@ -2832,13 +2821,13 @@ possibly representing outliers or a niche group of reviews.
 This distribution helps us interpret the nature of each cluster and assess how
 review sentiment varies across them.
 °°°"""
-# |%%--%%| <KfkITEpYC4|pnXd5duDpg>
+# |%%--%%| <KfkITEpYC4|qkDbTIo3yt>
 
 evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette", distanceMeasure="squaredEuclidean")
 silhouette_bkm = evaluator.evaluate(bkm_clustered)
 print(f"Silhouette Score (Bisecting KMeans): {silhouette_bkm:.3f}")
 
-# |%%--%%| <pnXd5duDpg|m9lED6XtUy>
+# |%%--%%| <qkDbTIo3yt|m9lED6XtUy>
 r"""°°°
 That’s a great result — even slightly better than your previous KMeans score (which was 0.754).
 °°°"""
@@ -2891,7 +2880,7 @@ predictive models.
 r"""°°°
  Visualize Cluster Feature Averages with Bar Plot
 °°°"""
-# |%%--%%| <A7AfMapZrM|jESyexL5QY>
+# |%%--%%| <A7AfMapZrM|DWR175fUO7>
 
 # Get mean of each feature per cluster
 
@@ -2899,7 +2888,7 @@ means = bkm_clustered.groupBy("cluster").agg(
     *[mean(c).alias(c) for c in selected_features]
 ).toPandas().set_index("cluster")
 
-# |%%--%%| <jESyexL5QY|N0d5Mt1ntG>
+# |%%--%%| <DWR175fUO7|NXpa9lzXC8>
 
 # Normalize the feature means (Min-Max Scaling)
 normalized = (means - means.min()) / (means.max() - means.min())
@@ -2914,10 +2903,9 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# |%%--%%| <N0d5Mt1ntG|9X3sDmn3pm>
+# |%%--%%| <NXpa9lzXC8|wBbnlboRaM>
 
 # This bar chart shows how each cluster differs across the features
-
 selected_features = [
     "Reviewer_Score",
     "Positive_Lemma_Count",
@@ -2927,36 +2915,36 @@ selected_features = [
     "days_since_review"
 ]
 
-# |%%--%%| <9X3sDmn3pm|hXOng7fov0>
+# |%%--%%| <wBbnlboRaM|hXOng7fov0>
 
 assembler = VectorAssembler(inputCols=selected_features, outputCol="features")
 review_cluster_input = assembler.transform(cleaned)
 
-# |%%--%%| <hXOng7fov0|0N0oRPPckG>
+# |%%--%%| <hXOng7fov0|fTSUBamV64>
 
 print("Number of rows:", review_cluster_input.count())
 
-# |%%--%%| <0N0oRPPckG|IPdFoquq4N>
+# |%%--%%| <fTSUBamV64|0YXp1XCU5A>
 
 review_cluster_input.select(selected_features).printSchema()
 
-# |%%--%%| <IPdFoquq4N|MH3zXnHxGU>
+# |%%--%%| <0YXp1XCU5A|M58vP3JlLG>
 
 for col in selected_features:
     review_cluster_input.select(col).filter(isnan(col) | isnull(col)).show(1)
 
-# |%%--%%| <MH3zXnHxGU|HBi6JhUJLA>
+# |%%--%%| <M58vP3JlLG|wATPMkIrUE>
 
 # Try with only one valid column (e.g., 'Average_Score' or 'Reviewer_Score') if it exists
 cleaned.select("Reviewer_Score").filter("Reviewer_Score is not null").show()
 
-# |%%--%%| <HBi6JhUJLA|ZmKW4rmrao>
+# |%%--%%| <wATPMkIrUE|EFgy58S9uF>
 
 kmeans = KMeans(featuresCol="features", predictionCol="cluster", k=4, seed=42)
 model = kmeans.fit(review_cluster_input)
 review_clusters = model.transform(review_cluster_input)
 
-# |%%--%%| <ZmKW4rmrao|JuK6hBYpRM>
+# |%%--%%| <EFgy58S9uF|JuK6hBYpRM>
 r"""°°°
 ## Limitations
 

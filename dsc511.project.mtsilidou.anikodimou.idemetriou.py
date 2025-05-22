@@ -1470,7 +1470,37 @@ if True:
 else:
     restore('1-NLP')
 
-# |%%--%%| <pEwtRXcAGm|Oum9GCaeBe>
+#|%%--%%| <pEwtRXcAGm|L6PEOiaITe>
+
+from wordcloud import WordCloud, STOPWORDS
+import matplotlib.pyplot as plt
+stopwords = set(STOPWORDS)
+
+def show_wordcloud(data, title = None):
+    wordcloud = WordCloud(
+        background_color='white',
+        max_words=200,
+        max_font_size=40,
+        stopwords={},
+        scale=3,
+        random_state=1 # chosen at random by flipping a coin; it was heads
+    ).generate(str(data))
+
+    fig = plt.figure(1, figsize=(12, 12))
+    plt.axis('off')
+    if title:
+        fig.suptitle(title, fontsize=20)
+        fig.subplots_adjust(top=2.3)
+
+    plt.imshow(wordcloud)
+    plt.show()
+
+#|%%--%%| <L6PEOiaITe|r91jxDujje>
+
+negative_filtered_sample = cleaned.select('Negative_Filtered_Tokens').sample(fraction=0.01).toPandas()
+positive_filtered_sample = cleaned.select('Positive_Filtered_Tokens').sample(fraction=0.01).toPandas()
+
+# |%%--%%| <r91jxDujje|Oum9GCaeBe>
 r"""°°°
 ## Graph Analysis
 
@@ -1588,31 +1618,31 @@ collab_sample = df.sample(fraction=0.01, withReplacement=False, seed=42)
 # print("Test rows:", test_data.count())
 
 # Building the ALS model
-# als = ALS(
-#     maxIter=10,
-#     regParam=0.01,
-#     rank=10,  # controls latent factor dimensionality
-#     userCol="reviewer_id_index",
-#     itemCol="hotel_id_index",
-#     ratingCol="Reviewer_Score",
-#     coldStartStrategy="drop"
-# )
+als = ALS(
+    maxIter=10,
+    regParam=0.01,
+    rank=10,  # controls latent factor dimensionality
+    userCol="reviewer_id_index",
+    itemCol="hotel_id_index",
+    ratingCol="Reviewer_Score",
+    coldStartStrategy="drop"
+)
 
-# # Training the model
-# model = als.fit(training_data)
+# Training the model
+model = als.fit(training_data)
 
-# # Generating the top 10 hotel recommendations for each reviewer
-# user_recs = model.recommendForAllUsers(10)
+# Generating the top 10 hotel recommendations for each reviewer
+user_recs = model.recommendForAllUsers(10)
 
-# # We flatten recommendation arrays
-# user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
-# user_recs = user_recs.selectExpr(
-#     "reviewer_id_index",
-#     "recommendation.hotel_id_index as hotel_id_index",
-#     "recommendation.rating as rating"
-# )
+# We flatten recommendation arrays
+user_recs = user_recs.selectExpr("reviewer_id_index", "explode(recommendations) as recommendation")
+user_recs = user_recs.selectExpr(
+    "reviewer_id_index",
+    "recommendation.hotel_id_index as hotel_id_index",
+    "recommendation.rating as rating"
+)
 
-# user_recs.show(truncate=False)
+user_recs.show(truncate=False)
 
 # |%%--%%| <VAbRvdJM2C|ukctSe4eLo>
 r"""°°°
@@ -1620,10 +1650,10 @@ r"""°°°
 °°°"""
 # |%%--%%| <ukctSe4eLo|HdKZi6peTR>
 
-# predictions = model.transform(test_data)
-# evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
-# rmse = evaluator.evaluate(predictions)
-# print(f"Root-mean-square error = {rmse}")
+predictions = model.transform(test_data)
+evaluator = RegressionEvaluator(metricName="rmse", labelCol="Reviewer_Score", predictionCol="prediction")
+rmse = evaluator.evaluate(predictions)
+print(f"Root-mean-square error = {rmse}")
 
 # |%%--%%| <HdKZi6peTR|P4vwjrbNus>
 
